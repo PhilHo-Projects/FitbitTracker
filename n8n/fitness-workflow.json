@@ -1,0 +1,234 @@
+{
+  "name": "FitbitTracker — Google Fit sync",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fitness-sync",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "fitness-sync-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify the shared token (disabled while EXPECTED_TOKEN is empty) and\n// compute the 7-day aggregate request body for Google Fit.\nconst input = $input.first().json;\nconst headers = input.headers || {};\nconst received = headers['x-fitness-token'] || '';\n\n// Set EXPECTED_TOKEN to a non-empty value to enforce. Empty = disabled (first test pass).\nconst EXPECTED_TOKEN = '';\nif (EXPECTED_TOKEN && received !== EXPECTED_TOKEN) {\n  throw new Error('Unauthorized: bad or missing x-fitness-token header');\n}\n\nconst days = 7;\nconst end = DateTime.now();\nconst start = end.minus({ days });\nconst endTimeMillis = Math.round(end.toMillis());\nconst startTimeMillis = Math.round(start.toMillis());\n\nconst aggregateBody = {\n  aggregateBy: [\n    { dataTypeName: 'com.google.step_count.delta' },\n    { dataTypeName: 'com.google.calories.expended' },\n    { dataTypeName: 'com.google.distance.delta' },\n    { dataTypeName: 'com.google.heart_rate.bpm' },\n  ],\n  bucketByTime: { durationMillis: 86400000 },\n  startTimeMillis,\n  endTimeMillis,\n};\n\nreturn [{ json: { days, startTimeMillis, endTimeMillis, aggregateBody, tokenOk: true } }];"
+      },
+      "id": "node-prep",
+      "name": "Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/oauth2/v3/userinfo",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-userinfo",
+      "name": "Userinfo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-fit-oauth2",
+          "name": "Google Fit OAuth2"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/fitness/v1/users/me/dataSources",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-datasources",
+      "name": "Fit Data Sources",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-fit-oauth2",
+          "name": "Google Fit OAuth2"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Prep').first().json.aggregateBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-aggregate",
+      "name": "Fit Aggregate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "google-fit-oauth2",
+          "name": "Google Fit OAuth2"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge the three Google calls into one friendly payload. Each HTTP node used\n// fullResponse + neverError, so every call yields { statusCode, headers, body }\n// regardless of success — we never throw, we report.\nfunction extractError(body) {\n  if (body == null) return 'No response body';\n  if (typeof body === 'string') return body.slice(0, 300);\n  if (body.error && body.error.message) return body.error.message;\n  if (body.error_description) return body.error_description;\n  if (typeof body.error === 'string') return body.error;\n  return JSON.stringify(body).slice(0, 300);\n}\n\nfunction pick(nodeName) {\n  try {\n    const j = $(nodeName).first().json;\n    const status = typeof j.statusCode === 'number' ? j.statusCode : null;\n    const body = j.body !== undefined ? j.body : j;\n    const ok = typeof status === 'number' && status >= 200 && status < 300;\n    return { ok, status, body };\n  } catch (e) {\n    return { ok: false, status: null, body: null, error: e.message };\n  }\n}\n\nconst prep = $('Prep').first().json;\nconst userinfo = pick('Userinfo');\nconst dataSources = pick('Fit Data Sources');\nconst aggregate = pick('Fit Aggregate');\n\nlet auth;\nif (userinfo.ok) {\n  const u = userinfo.body || {};\n  auth = { ok: true, user: { email: u.email || null, name: u.name || null, picture: u.picture || null } };\n} else {\n  auth = { ok: false, status: userinfo.status, error: extractError(userinfo.body) };\n}\n\nlet totalSteps = 0;\nlet totalCalories = 0;\nlet totalDistanceMeters = 0;\nlet hrSum = 0;\nlet hrCount = 0;\n\nconst buckets = aggregate.ok && aggregate.body ? (aggregate.body.bucket || []) : [];\nfor (const bucket of buckets) {\n  for (const ds of (bucket.dataset || [])) {\n    for (const point of (ds.point || [])) {\n      const type = point.dataTypeName || '';\n      const v = (point.value && point.value[0]) || {};\n      if (type.indexOf('step_count') !== -1) totalSteps += v.intVal || 0;\n      else if (type.indexOf('calories') !== -1) totalCalories += v.fpVal || 0;\n      else if (type.indexOf('distance') !== -1) totalDistanceMeters += v.fpVal || 0;\n      else if (type.indexOf('heart_rate') !== -1 && v.fpVal != null) { hrSum += v.fpVal; hrCount += 1; }\n    }\n  }\n}\n\nconst summary = {\n  days: prep.days,\n  totalSteps,\n  totalCalories: Math.round(totalCalories * 10) / 10,\n  totalDistanceMeters: Math.round(totalDistanceMeters),\n  avgHeartRateBpm: hrCount ? Math.round(hrSum / hrCount) : null,\n};\n\nconst dsList = dataSources.ok && dataSources.body ? (dataSources.body.dataSource || []) : [];\n\nreturn [{\n  json: {\n    ok: true,\n    generatedAt: new Date().toISOString(),\n    window: { startTimeMillis: prep.startTimeMillis, endTimeMillis: prep.endTimeMillis, days: prep.days },\n    auth,\n    summary,\n    sections: {\n      userinfo: {\n        ok: userinfo.ok,\n        status: userinfo.status,\n        error: userinfo.ok ? null : extractError(userinfo.body),\n      },\n      dataSources: {\n        ok: dataSources.ok,\n        status: dataSources.status,\n        count: dsList.length,\n        sample: dsList.slice(0, 5).map((d) => d.dataStreamId || d.dataStreamName || null),\n        error: dataSources.ok ? null : extractError(dataSources.body),\n      },\n      aggregate: {\n        ok: aggregate.ok,\n        status: aggregate.status,\n        buckets: buckets.length,\n        error: aggregate.ok ? null : extractError(aggregate.body),\n      },\n    },\n  },\n}];"
+      },
+      "id": "node-merge",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "node-respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep": {
+      "main": [
+        [
+          {
+            "node": "Userinfo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Userinfo": {
+      "main": [
+        [
+          {
+            "node": "Fit Data Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fit Data Sources": {
+      "main": [
+        [
+          {
+            "node": "Fit Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fit Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

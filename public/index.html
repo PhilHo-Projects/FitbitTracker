@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FitbitTracker — Google Fit via n8n</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⌚</text></svg>" />
+  </head>
+  <body class="h-full bg-slate-950 text-slate-100 antialiased">
+    <div class="mx-auto max-w-5xl px-4 py-8 sm:py-12">
+      <!-- Header -->
+      <header class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">⌚ FitbitTracker</h1>
+          <p class="mt-1 text-sm text-slate-400">
+            Pulls Google Fit data through an n8n webhook. First-pass plumbing test.
+          </p>
+        </div>
+        <button
+          id="syncBtn"
+          class="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-emerald-950 shadow-sm transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span id="syncSpinner" class="hidden h-4 w-4 animate-spin rounded-full border-2 border-emerald-950/40 border-t-emerald-950"></span>
+          <span id="syncLabel">Sync from Google Fit</span>
+        </button>
+      </header>
+
+      <!-- Pipeline status -->
+      <section id="statusRow" class="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4" data-status="auth">
+          <div class="text-xs uppercase tracking-wide text-slate-500">Google auth</div>
+          <div class="mt-1 flex items-center gap-2">
+            <span class="status-dot h-2.5 w-2.5 rounded-full bg-slate-600"></span>
+            <span class="status-text text-sm text-slate-400">Not synced yet</span>
+          </div>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4" data-status="dataSources">
+          <div class="text-xs uppercase tracking-wide text-slate-500">Fit data sources</div>
+          <div class="mt-1 flex items-center gap-2">
+            <span class="status-dot h-2.5 w-2.5 rounded-full bg-slate-600"></span>
+            <span class="status-text text-sm text-slate-400">Not synced yet</span>
+          </div>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4" data-status="aggregate">
+          <div class="text-xs uppercase tracking-wide text-slate-500">Fit aggregate (7d)</div>
+          <div class="mt-1 flex items-center gap-2">
+            <span class="status-dot h-2.5 w-2.5 rounded-full bg-slate-600"></span>
+            <span class="status-text text-sm text-slate-400">Not synced yet</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Identity -->
+      <section id="identity" class="mt-6 hidden rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="flex items-center gap-3">
+          <img id="identityPic" alt="" class="h-10 w-10 rounded-full bg-slate-800 object-cover" />
+          <div>
+            <div id="identityName" class="text-sm font-medium text-slate-100">—</div>
+            <div id="identityEmail" class="text-xs text-slate-400">—</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Metric cards -->
+      <section class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div class="text-xs uppercase tracking-wide text-slate-500">Steps (7d)</div>
+          <div id="metricSteps" class="mt-1 text-2xl font-semibold tabular-nums">—</div>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div class="text-xs uppercase tracking-wide text-slate-500">Calories (7d)</div>
+          <div id="metricCalories" class="mt-1 text-2xl font-semibold tabular-nums">—</div>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div class="text-xs uppercase tracking-wide text-slate-500">Distance (7d)</div>
+          <div id="metricDistance" class="mt-1 text-2xl font-semibold tabular-nums">—</div>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div class="text-xs uppercase tracking-wide text-slate-500">Avg heart rate</div>
+          <div id="metricHeart" class="mt-1 text-2xl font-semibold tabular-nums">—</div>
+        </div>
+      </section>
+
+      <!-- Message / error banner -->
+      <div id="banner" class="mt-6 hidden rounded-xl border p-4 text-sm"></div>
+
+      <!-- Raw response -->
+      <section class="mt-6">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-medium text-slate-300">Raw response</h2>
+          <span id="elapsed" class="text-xs text-slate-500"></span>
+        </div>
+        <pre id="raw" class="mt-2 max-h-96 overflow-auto rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs leading-relaxed text-slate-300">Click “Sync from Google Fit” to call the n8n webhook.</pre>
+      </section>
+
+      <footer class="mt-10 text-center text-xs text-slate-600">
+        n8n: <span class="text-slate-500">n8n.philippeho.dev</span> · data: Google Fit REST API
+      </footer>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+node_modules
+secrets
+.git
+.gitignore
+.env
+.env.*
+docs
+n8n
+README.md
+*.log

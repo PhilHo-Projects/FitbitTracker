@@ -1,0 +1,19 @@
+{
+  "name": "fitbit-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Basic dashboard that pulls Google Fit data through an n8n webhook.",
+  "scripts": {
+    "build": "tailwindcss -i ./src/input.css -o ./public/styles.css --minify",
+    "predev": "npm run build",
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.4"
+  }
+}
