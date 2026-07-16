@@ -8,7 +8,8 @@
     "build": "tailwindcss -i ./src/input.css -o ./public/styles.css --minify",
     "predev": "npm run build",
     "dev": "node server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.19.2"
