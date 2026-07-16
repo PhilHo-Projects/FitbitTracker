@@ -356,10 +356,10 @@ function upstreamFailure(payload) {
   if (upstream?.ok === false) {
     return upstream.message || upstream.error || 'The n8n workflow could not fetch sleep data.';
   }
-  const failedSection = Object.values(upstream?.sections || {}).find(
-    (section) => section?.ok === false,
-  );
-  return failedSection?.message || failedSection?.error || null;
+  const sleepSection = upstream?.sections?.sleep;
+  return sleepSection?.ok === false
+    ? sleepSection.message || sleepSection.error || 'Google Health sleep fetch failed.'
+    : null;
 }
 
 async function fetchSleep() {

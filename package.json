@@ -6,6 +6,7 @@
   "description": "Basic dashboard that pulls Google Fit data through an n8n webhook.",
   "scripts": {
     "build": "tailwindcss -i ./src/input.css -o ./public/styles.css --minify",
+    "build:workflow": "node scripts/build-n8n-workflow.mjs",
     "predev": "npm run build",
     "dev": "node server.js",
     "start": "node server.js",
