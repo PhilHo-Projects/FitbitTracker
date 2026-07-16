@@ -1,131 +1,424 @@
-// FitbitTracker dashboard — calls the server-side proxy (/api/fitness),
-// which forwards to the n8n webhook. Renders defensively: even an unexpected
-// shape still shows the raw JSON instead of crashing.
+import {
+  buildTimelineSegments,
+  formatDuration,
+  scaleWeekDurations,
+  stagePercentages,
+} from './sleep-ui.js';
 
-const $ = (sel) => document.querySelector(sel);
+const stageOrder = ['awake', 'light', 'deep', 'rem', 'asleep', 'restless'];
+const knownStages = new Set(stageOrder);
+const $ = (selector) => document.querySelector(selector);
 
-const els = {
-  btn: $('#syncBtn'),
-  spinner: $('#syncSpinner'),
-  label: $('#syncLabel'),
-  raw: $('#raw'),
-  elapsed: $('#elapsed'),
-  banner: $('#banner'),
-  identity: $('#identity'),
-  identityPic: $('#identityPic'),
-  identityName: $('#identityName'),
-  identityEmail: $('#identityEmail'),
-  steps: $('#metricSteps'),
-  calories: $('#metricCalories'),
-  distance: $('#metricDistance'),
-  heart: $('#metricHeart'),
+const elements = {
+  connectionStatus: $('#connectionStatus'),
+  connectionStatusText: $('#connectionStatusText'),
+  refreshButton: $('#refreshButton'),
+  refreshSpinner: $('#refreshSpinner'),
+  refreshLabel: $('#refreshLabel'),
+  logoutButton: $('#logoutButton'),
+  notice: $('#notice'),
+  loadingState: $('#loadingState'),
+  emptyState: $('#emptyState'),
+  emptyRefreshButton: $('#emptyRefreshButton'),
+  dashboardContent: $('#dashboardContent'),
+  latestDate: $('#latestDate'),
+  latestDuration: $('#latestDuration'),
+  bedtimeValue: $('#bedtimeValue'),
+  wakeValue: $('#wakeValue'),
+  sleepTypeBadge: $('#sleepTypeBadge'),
+  stageCaption: $('#stageCaption'),
+  stageTimeline: $('#stageTimeline'),
+  stageLegend: $('#stageLegend'),
+  averageDuration: $('#averageDuration'),
+  averageAsleep: $('#averageAsleep'),
+  averageEfficiency: $('#averageEfficiency'),
+  nightsCount: $('#nightsCount'),
+  rangeLabel: $('#rangeLabel'),
+  trendAverage: $('#trendAverage'),
+  weekChart: $('#weekChart'),
+  nightHistory: $('#nightHistory'),
+  napsPanel: $('#napsPanel'),
+  napsCount: $('#napsCount'),
+  napHistory: $('#napHistory'),
+  syncMeta: $('#syncMeta'),
+  rawResponse: $('#rawResponse'),
 };
 
-const fmt = (n, digits = 0) =>
-  typeof n === 'number' && Number.isFinite(n)
-    ? n.toLocaleString(undefined, { maximumFractionDigits: digits })
-    : '—';
+let hasRendered = false;
 
-function setStatus(key, ok, text) {
-  const card = document.querySelector(`[data-status="${key}"]`);
-  if (!card) return;
-  const dot = card.querySelector('.status-dot');
-  const label = card.querySelector('.status-text');
-  dot.className =
-    'status-dot h-2.5 w-2.5 rounded-full ' +
-    (ok === true ? 'bg-emerald-400' : ok === false ? 'bg-rose-500' : 'bg-slate-600');
-  label.className =
-    'status-text text-sm ' +
-    (ok === true ? 'text-emerald-300' : ok === false ? 'text-rose-300' : 'text-slate-400');
-  label.textContent = text;
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
-function showBanner(kind, message) {
-  els.banner.classList.remove('hidden', 'border-rose-800', 'bg-rose-950/50', 'text-rose-200',
-    'border-amber-800', 'bg-amber-950/40', 'text-amber-200', 'border-emerald-800',
-    'bg-emerald-950/40', 'text-emerald-200');
-  const styles = {
-    error: ['border-rose-800', 'bg-rose-950/50', 'text-rose-200'],
-    warn: ['border-amber-800', 'bg-amber-950/40', 'text-amber-200'],
-    ok: ['border-emerald-800', 'bg-emerald-950/40', 'text-emerald-200'],
-  }[kind] || ['border-slate-800', 'text-slate-200'];
-  els.banner.classList.add(...styles);
-  els.banner.textContent = message;
+function stageName(type) {
+  const names = {
+    awake: 'Awake',
+    light: 'Light',
+    deep: 'Deep',
+    rem: 'REM',
+    asleep: 'Asleep',
+    restless: 'Restless',
+  };
+  return names[type] || String(type || 'Unknown').replaceAll('_', ' ');
+}
+
+function safeStage(type) {
+  return knownStages.has(type) ? type : 'unspecified';
+}
+
+function formatDate(date, options = {}) {
+  if (!date) return '—';
+  const parsed = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return parsed.toLocaleDateString(undefined, {
+    weekday: options.compact ? 'short' : 'long',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function parseOffsetSeconds(offset) {
+  const value = String(offset || '');
+  return value.endsWith('s') && Number.isFinite(Number(value.slice(0, -1)))
+    ? Number(value.slice(0, -1))
+    : 0;
+}
+
+function formatCivilTime(civilDateTime) {
+  const time = civilDateTime?.time;
+  if (!time) return null;
+  const date = new Date(Date.UTC(2026, 0, 1, Number(time.hours || 0), Number(time.minutes || 0)));
+  return date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  });
+}
+
+function formatLocalTime(timestamp, utcOffset, civilDateTime) {
+  const civilTime = formatCivilTime(civilDateTime);
+  if (civilTime) return civilTime;
+
+  const physicalTime = Date.parse(timestamp);
+  if (!Number.isFinite(physicalTime)) return '—';
+  const shifted = new Date(physicalTime + parseOffsetSeconds(utcOffset) * 1000);
+  return shifted.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  });
+}
+
+function setConnectionState(state, text) {
+  elements.connectionStatus.dataset.state = state;
+  elements.connectionStatusText.textContent = text;
+}
+
+function showNotice(kind, message) {
+  elements.notice.dataset.kind = kind;
+  elements.notice.textContent = message;
+  elements.notice.hidden = !message;
 }
 
 function setLoading(loading) {
-  els.btn.disabled = loading;
-  els.spinner.classList.toggle('hidden', !loading);
-  els.label.textContent = loading ? 'Syncing…' : 'Sync from Google Fit';
+  elements.refreshButton.disabled = loading;
+  elements.refreshSpinner.hidden = !loading;
+  elements.refreshButton.querySelector('.button-icon').hidden = loading;
+  elements.refreshLabel.textContent = loading ? 'Fetching…' : 'Refresh sleep';
+
+  if (!hasRendered) {
+    elements.loadingState.hidden = !loading;
+    elements.dashboardContent.hidden = true;
+    elements.emptyState.hidden = true;
+  }
 }
 
-function renderPayload(payload) {
-  // `payload.data` is whatever n8n returned. Be liberal about the shape.
-  const d = payload?.data ?? {};
-  const auth = d.auth ?? d.sections?.userinfo ?? {};
-  const summary = d.summary ?? {};
-  const sections = d.sections ?? {};
-
-  // Identity
-  const user = auth.user ?? auth.data ?? {};
-  if (user && (user.email || user.name)) {
-    els.identity.classList.remove('hidden');
-    els.identityName.textContent = user.name || user.given_name || '—';
-    els.identityEmail.textContent = user.email || '—';
-    if (user.picture) els.identityPic.src = user.picture;
-  }
-
-  // Status pills
-  const authOk = auth.ok ?? Boolean(user.email);
-  setStatus('auth', authOk, authOk ? `Connected${user.email ? ' · ' + user.email : ''}` : (auth.error || 'Auth failed'));
-
-  const ds = sections.dataSources ?? {};
-  if ('ok' in ds || 'count' in ds) {
-    setStatus('dataSources', ds.ok ?? null, ds.ok ? `${ds.count ?? '?'} data sources` : (ds.error || 'Unavailable'));
-  }
-
-  const agg = sections.aggregate ?? {};
-  if ('ok' in agg) {
-    setStatus('aggregate', agg.ok, agg.ok ? 'Buckets received' : (agg.error || 'Unavailable'));
-  }
-
-  // Metric cards
-  els.steps.textContent = fmt(summary.totalSteps);
-  els.calories.textContent = summary.totalCalories != null ? `${fmt(summary.totalCalories)} kcal` : '—';
-  els.distance.textContent =
-    summary.totalDistanceMeters != null ? `${fmt(summary.totalDistanceMeters / 1000, 2)} km` : '—';
-  els.heart.textContent = summary.avgHeartRateBpm != null ? `${fmt(summary.avgHeartRateBpm)} bpm` : '—';
+function extractSleepData(payload) {
+  const upstream = payload?.data;
+  if (upstream?.nights && upstream?.summary) return upstream;
+  if (upstream?.data?.nights && upstream?.data?.summary) return upstream.data;
+  if (upstream?.sleep?.nights && upstream?.sleep?.summary) return upstream.sleep;
+  return null;
 }
 
-async function sync() {
+function summarySegments(night) {
+  return stageOrder
+    .map((type) => ({
+      type,
+      durationMinutes: Number(night.stageSummary?.[type]?.minutes || 0),
+    }))
+    .filter((stage) => stage.durationMinutes > 0);
+}
+
+function renderTimeline(night) {
+  const hasMeasuredTimeline = Array.isArray(night.stages) && night.stages.length > 0;
+  const segments = buildTimelineSegments(
+    hasMeasuredTimeline ? night.stages : summarySegments(night),
+  );
+  const percentages = stagePercentages(night.stageSummary, night.durationMinutes);
+
+  elements.stageTimeline.innerHTML = segments.length
+    ? segments
+        .map(
+          (segment) => `
+            <span
+              class="timeline-segment"
+              data-stage="${safeStage(segment.type)}"
+              style="width:${segment.widthPercent}%"
+              title="${escapeHtml(stageName(segment.type))}: ${escapeHtml(formatDuration(segment.durationMinutes))}"
+            ></span>
+          `,
+        )
+        .join('')
+    : '<span class="timeline-empty">No stage breakdown available</span>';
+
+  const ariaSummary = segments
+    .map((segment) => `${stageName(segment.type)} ${formatDuration(segment.durationMinutes)}`)
+    .join(', ');
+  elements.stageTimeline.setAttribute(
+    'aria-label',
+    ariaSummary ? `Sleep stages: ${ariaSummary}` : 'No sleep stage breakdown available',
+  );
+  elements.stageCaption.textContent = hasMeasuredTimeline
+    ? 'Measured in sequence across the night'
+    : 'Summary totals; exact stage sequence unavailable';
+
+  const summaryEntries = stageOrder.filter((type) => night.stageSummary?.[type]);
+  elements.stageLegend.innerHTML = summaryEntries.length
+    ? summaryEntries
+        .map((type) => {
+          const minutes = Number(night.stageSummary[type].minutes || 0);
+          return `
+            <div class="stage-stat">
+              <span class="stage-key"><i data-stage="${safeStage(type)}"></i>${escapeHtml(stageName(type))}</span>
+              <strong>${escapeHtml(formatDuration(minutes))}</strong>
+              <small>${escapeHtml(percentages[type] ?? 0)}%</small>
+            </div>
+          `;
+        })
+        .join('')
+    : '<p class="muted-copy">Google Health returned this sleep without stage totals.</p>';
+}
+
+function renderLatest(night) {
+  elements.latestDate.textContent = formatDate(night.date);
+  elements.latestDuration.textContent = formatDuration(night.durationMinutes);
+  elements.bedtimeValue.textContent = formatLocalTime(
+    night.startTime,
+    night.startUtcOffset,
+    night.civilStartTime,
+  );
+  elements.wakeValue.textContent = formatLocalTime(
+    night.endTime,
+    night.endUtcOffset,
+    night.civilEndTime,
+  );
+  elements.sleepTypeBadge.textContent =
+    night.type === 'stages' ? 'Stage sleep' : night.type === 'classic' ? 'Classic sleep' : 'Sleep';
+  renderTimeline(night);
+}
+
+function renderSummary(data) {
+  const summary = data.summary || {};
+  elements.averageDuration.textContent = formatDuration(summary.averageDurationMinutes);
+  elements.averageAsleep.textContent = formatDuration(summary.averageMinutesAsleep);
+  elements.averageEfficiency.textContent = `${Number(summary.averageEfficiency || 0).toFixed(1)}%`;
+  elements.nightsCount.textContent = String(summary.nightsCount ?? data.nights.length);
+  elements.trendAverage.textContent = `Average ${formatDuration(summary.averageDurationMinutes)}`;
+  elements.rangeLabel.textContent =
+    data.range?.startDate && data.range?.endDateExclusive
+      ? `${data.range.startDate} to ${data.range.endDateExclusive}`
+      : 'latest seven dates';
+}
+
+function renderWeekChart(nights) {
+  const chronological = [...nights].reverse();
+  const bars = scaleWeekDurations(chronological);
+  elements.weekChart.innerHTML = bars
+    .map((bar) => {
+      const visibleHeight = bar.durationMinutes > 0 ? Math.max(7, bar.heightPercent) : 0;
+      return `
+        <div class="week-column">
+          <span class="week-duration">${escapeHtml(formatDuration(bar.durationMinutes))}</span>
+          <div class="week-bar-track">
+            <span
+              class="week-bar"
+              style="height:${visibleHeight}%"
+              title="${escapeHtml(formatDate(bar.date))}: ${escapeHtml(formatDuration(bar.durationMinutes))}"
+            ></span>
+          </div>
+          <span class="week-day">${escapeHtml(formatDate(bar.date, { compact: true }).split(',')[0])}</span>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function compactStages(night) {
+  const stages = stageOrder.filter((type) => Number(night.stageSummary?.[type]?.minutes || 0) > 0);
+  if (!stages.length) {
+    return '<span class="muted-copy">No stages</span>';
+  }
+  return `
+    <span class="stage-mini-strip" aria-label="${escapeHtml(stages.map(stageName).join(', '))}">
+      ${stages
+        .map(
+          (type) =>
+            `<i data-stage="${safeStage(type)}" title="${escapeHtml(stageName(type))}"></i>`,
+        )
+        .join('')}
+    </span>
+  `;
+}
+
+function renderHistory(nights) {
+  elements.nightHistory.innerHTML = nights
+    .map(
+      (night) => `
+        <article class="history-row">
+          <div class="history-primary">
+            <strong>${escapeHtml(formatDate(night.date, { compact: true }))}</strong>
+            <small>${escapeHtml(
+              `${formatLocalTime(night.startTime, night.startUtcOffset, night.civilStartTime)} – ${formatLocalTime(
+                night.endTime,
+                night.endUtcOffset,
+                night.civilEndTime,
+              )}`,
+            )}</small>
+          </div>
+          <span data-label="Period">${escapeHtml(formatDuration(night.durationMinutes))}</span>
+          <span data-label="Asleep">${escapeHtml(formatDuration(night.minutesAsleep))}</span>
+          <span data-label="Efficiency">${escapeHtml(Number(night.efficiency || 0).toFixed(1))}%</span>
+          <span data-label="Stages">${compactStages(night)}</span>
+        </article>
+      `,
+    )
+    .join('');
+}
+
+function renderNaps(naps) {
+  elements.napsPanel.hidden = !naps.length;
+  if (!naps.length) return;
+
+  elements.napsCount.textContent = `${naps.length} ${naps.length === 1 ? 'nap' : 'naps'}`;
+  elements.napHistory.innerHTML = naps
+    .map(
+      (nap) => `
+        <article class="nap-row">
+          <span>
+            <strong>${escapeHtml(formatDate(nap.date, { compact: true }))}</strong>
+            <small>${escapeHtml(
+              formatLocalTime(nap.startTime, nap.startUtcOffset, nap.civilStartTime),
+            )}</small>
+          </span>
+          <strong>${escapeHtml(formatDuration(nap.durationMinutes))}</strong>
+        </article>
+      `,
+    )
+    .join('');
+}
+
+function renderSleep(data, payload) {
+  const nights = Array.isArray(data.nights) ? data.nights : [];
+  const naps = Array.isArray(data.naps) ? data.naps : [];
+  hasRendered = true;
+  elements.loadingState.hidden = true;
+
+  if (!nights.length) {
+    elements.dashboardContent.hidden = true;
+    elements.emptyState.hidden = false;
+    setConnectionState('ok', 'Connected · no sleep found');
+  } else {
+    elements.emptyState.hidden = true;
+    elements.dashboardContent.hidden = false;
+    renderLatest(data.latest || nights[0]);
+    renderSummary({ ...data, nights });
+    renderWeekChart(nights);
+    renderHistory(nights);
+    renderNaps(naps);
+    setConnectionState('ok', `Connected · ${nights.length} ${nights.length === 1 ? 'night' : 'nights'}`);
+  }
+
+  const generatedAt = data.generatedAt
+    ? new Date(data.generatedAt).toLocaleString()
+    : 'time unavailable';
+  elements.syncMeta.textContent = `Generated ${generatedAt} · dashboard proxy ${payload.elapsedMs ?? '—'} ms`;
+  elements.rawResponse.textContent = JSON.stringify(payload, null, 2);
+}
+
+function upstreamFailure(payload) {
+  const upstream = payload?.data;
+  if (upstream?.ok === false) {
+    return upstream.message || upstream.error || 'The n8n workflow could not fetch sleep data.';
+  }
+  const failedSection = Object.values(upstream?.sections || {}).find(
+    (section) => section?.ok === false,
+  );
+  return failedSection?.message || failedSection?.error || null;
+}
+
+async function fetchSleep() {
   setLoading(true);
-  els.banner.classList.add('hidden');
-  els.raw.textContent = 'Calling n8n…';
-  try {
-    const res = await fetch('/api/fitness', { method: 'POST' });
-    const payload = await res.json();
-    els.raw.textContent = JSON.stringify(payload, null, 2);
-    els.elapsed.textContent = payload.elapsedMs != null ? `${payload.elapsedMs} ms` : '';
+  showNotice('', '');
+  setConnectionState('loading', 'Fetching Google Health');
 
-    if (!payload.ok) {
-      // Proxy or webhook-level failure.
-      const msg = payload.message || 'Request failed';
-      const hint = payload.hint ? ` — ${payload.hint}` : '';
-      showBanner('error', `${msg}${hint}`);
-      setStatus('auth', false, 'No data');
-      setStatus('dataSources', null, '—');
-      setStatus('aggregate', null, '—');
+  try {
+    const response = await fetch('/api/sleep', { method: 'POST' });
+    const payload = await response.json().catch(() => ({
+      ok: false,
+      message: `Dashboard API returned HTTP ${response.status}`,
+    }));
+    elements.rawResponse.textContent = JSON.stringify(payload, null, 2);
+
+    if (response.status === 401) {
+      window.location.assign('/login');
       return;
     }
+    if (!response.ok || !payload.ok) {
+      throw new Error([payload.message, payload.hint].filter(Boolean).join(' — ') || 'Sync failed');
+    }
 
-    renderPayload(payload);
-    showBanner('ok', 'Sync complete. See per-section status above and the raw response below.');
-  } catch (err) {
-    els.raw.textContent = String(err);
-    showBanner('error', `Could not reach the dashboard API: ${err.message || err}`);
+    const sectionError = upstreamFailure(payload);
+    if (sectionError) {
+      throw new Error(sectionError);
+    }
+
+    const data = extractSleepData(payload);
+    if (!data) {
+      throw new Error('n8n returned an unexpected sleep-data shape. Open diagnostics for details.');
+    }
+
+    renderSleep(data, payload);
+  } catch (error) {
+    elements.loadingState.hidden = true;
+    if (!hasRendered) {
+      elements.emptyState.hidden = true;
+      elements.dashboardContent.hidden = true;
+    }
+    setConnectionState('error', 'Sync needs attention');
+    showNotice('error', error?.message || String(error));
+    elements.syncMeta.textContent = 'Latest sync failed';
   } finally {
     setLoading(false);
   }
 }
 
-els.btn.addEventListener('click', sync);
+async function logout() {
+  elements.logoutButton.disabled = true;
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+  } finally {
+    window.location.assign('/login');
+  }
+}
+
+elements.refreshButton.addEventListener('click', fetchSleep);
+elements.emptyRefreshButton.addEventListener('click', fetchSleep);
+elements.logoutButton.addEventListener('click', logout);
+
+fetchSleep();

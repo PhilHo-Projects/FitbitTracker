@@ -1,104 +1,230 @@
-<!DOCTYPE html>
-<html lang="en" class="h-full">
+<!doctype html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FitbitTracker — Google Fit via n8n</title>
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b0e14" />
+    <title>FitbitTracker — Sleep dashboard</title>
     <link rel="stylesheet" href="/styles.css" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⌚</text></svg>" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23b9dc8c' d='M20.7 15.2A8.5 8.5 0 0 1 8.8 3.3 9 9 0 1 0 20.7 15.2Z'/></svg>"
+    />
   </head>
-  <body class="h-full bg-slate-950 text-slate-100 antialiased">
-    <div class="mx-auto max-w-5xl px-4 py-8 sm:py-12">
-      <!-- Header -->
-      <header class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">⌚ FitbitTracker</h1>
-          <p class="mt-1 text-sm text-slate-400">
-            Pulls Google Fit data through an n8n webhook. First-pass plumbing test.
-          </p>
+  <body class="app-body">
+    <div class="dashboard-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="FitbitTracker sleep dashboard">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M20.4 15.2A8.2 8.2 0 0 1 8.8 3.6a8.7 8.7 0 1 0 11.6 11.6Z"
+                fill="currentColor"
+              />
+            </svg>
+          </span>
+          <span>
+            <strong>FitbitTracker</strong>
+            <small>Google Health sleep</small>
+          </span>
+        </a>
+
+        <div class="topbar-actions">
+          <div id="connectionStatus" class="status-pill" data-state="idle">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="connectionStatusText">Waiting to sync</span>
+          </div>
+          <button id="refreshButton" class="primary-button" type="button">
+            <span id="refreshSpinner" class="button-spinner" hidden aria-hidden="true"></span>
+            <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span id="refreshLabel">Refresh sleep</span>
+          </button>
+          <button id="logoutButton" class="quiet-button" type="button">Sign out</button>
         </div>
-        <button
-          id="syncBtn"
-          class="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-emerald-950 shadow-sm transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <span id="syncSpinner" class="hidden h-4 w-4 animate-spin rounded-full border-2 border-emerald-950/40 border-t-emerald-950"></span>
-          <span id="syncLabel">Sync from Google Fit</span>
-        </button>
       </header>
 
-      <!-- Pipeline status -->
-      <section id="statusRow" class="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4" data-status="auth">
-          <div class="text-xs uppercase tracking-wide text-slate-500">Google auth</div>
-          <div class="mt-1 flex items-center gap-2">
-            <span class="status-dot h-2.5 w-2.5 rounded-full bg-slate-600"></span>
-            <span class="status-text text-sm text-slate-400">Not synced yet</span>
+      <main>
+        <div id="notice" class="notice" role="alert" hidden></div>
+
+        <section id="loadingState" class="loading-grid" aria-label="Loading sleep data">
+          <div class="panel skeleton-panel skeleton-large">
+            <span class="skeleton-line skeleton-line-short"></span>
+            <span class="skeleton-line skeleton-line-title"></span>
+            <span class="skeleton-line skeleton-line-medium"></span>
+            <span class="skeleton-block"></span>
           </div>
-        </div>
-        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4" data-status="dataSources">
-          <div class="text-xs uppercase tracking-wide text-slate-500">Fit data sources</div>
-          <div class="mt-1 flex items-center gap-2">
-            <span class="status-dot h-2.5 w-2.5 rounded-full bg-slate-600"></span>
-            <span class="status-text text-sm text-slate-400">Not synced yet</span>
+          <div class="metric-grid">
+            <div class="metric-card skeleton-panel"></div>
+            <div class="metric-card skeleton-panel"></div>
+            <div class="metric-card skeleton-panel"></div>
+            <div class="metric-card skeleton-panel"></div>
           </div>
-        </div>
-        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4" data-status="aggregate">
-          <div class="text-xs uppercase tracking-wide text-slate-500">Fit aggregate (7d)</div>
-          <div class="mt-1 flex items-center gap-2">
-            <span class="status-dot h-2.5 w-2.5 rounded-full bg-slate-600"></span>
-            <span class="status-text text-sm text-slate-400">Not synced yet</span>
+        </section>
+
+        <section id="emptyState" class="panel empty-state" hidden>
+          <span class="empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M20 15.2A8.3 8.3 0 0 1 8.8 4a8.8 8.8 0 1 0 11.2 11.2Z"
+                stroke="currentColor"
+                stroke-width="1.6"
+              />
+            </svg>
+          </span>
+          <p class="eyebrow">No records yet</p>
+          <h1>No sleep appeared in this seven-day window.</h1>
+          <p>
+            This is a valid Google Health response. Try refreshing after Fitbit has finished
+            processing last night, or inspect the diagnostics below.
+          </p>
+          <button id="emptyRefreshButton" class="primary-button" type="button">Try again</button>
+        </section>
+
+        <div id="dashboardContent" hidden>
+          <div class="dashboard-grid">
+            <section class="panel latest-panel" aria-labelledby="latestHeading">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Latest night</p>
+                  <h1 id="latestHeading">Sleep overview</h1>
+                </div>
+                <span id="latestDate" class="date-chip">—</span>
+              </div>
+
+              <div class="latest-summary">
+                <div>
+                  <span id="latestDuration" class="hero-value">—</span>
+                  <span class="hero-label">sleep period</span>
+                </div>
+                <dl class="time-pair">
+                  <div>
+                    <dt>Bedtime</dt>
+                    <dd id="bedtimeValue">—</dd>
+                  </div>
+                  <div>
+                    <dt>Wake time</dt>
+                    <dd id="wakeValue">—</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div class="timeline-heading">
+                <div>
+                  <h2>Sleep stages</h2>
+                  <p id="stageCaption">Measured across the sleep period</p>
+                </div>
+                <span id="sleepTypeBadge" class="type-badge">—</span>
+              </div>
+              <div
+                id="stageTimeline"
+                class="sleep-timeline"
+                role="img"
+                aria-label="Sleep stage timeline"
+              ></div>
+              <div id="stageLegend" class="stage-legend"></div>
+            </section>
+
+            <aside class="metric-grid" aria-label="Seven-night summary">
+              <article class="metric-card">
+                <span class="metric-label">Average sleep</span>
+                <strong id="averageDuration" class="metric-value">—</strong>
+                <span class="metric-note">per recorded night</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">Average asleep</span>
+                <strong id="averageAsleep" class="metric-value">—</strong>
+                <span class="metric-note">excluding awake time</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">Efficiency</span>
+                <strong id="averageEfficiency" class="metric-value">—</strong>
+                <span class="metric-note">asleep ÷ sleep period</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">Nights found</span>
+                <strong id="nightsCount" class="metric-value">—</strong>
+                <span id="rangeLabel" class="metric-note">latest seven dates</span>
+              </article>
+            </aside>
           </div>
-        </div>
-      </section>
 
-      <!-- Identity -->
-      <section id="identity" class="mt-6 hidden rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <div class="flex items-center gap-3">
-          <img id="identityPic" alt="" class="h-10 w-10 rounded-full bg-slate-800 object-cover" />
-          <div>
-            <div id="identityName" class="text-sm font-medium text-slate-100">—</div>
-            <div id="identityEmail" class="text-xs text-slate-400">—</div>
-          </div>
-        </div>
-      </section>
+          <section class="panel trend-panel" aria-labelledby="trendHeading">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Seven-night trend</p>
+                <h2 id="trendHeading">Sleep period by night</h2>
+              </div>
+              <span id="trendAverage" class="subtle-stat">Average —</span>
+            </div>
+            <div id="weekChart" class="week-chart" aria-label="Sleep duration chart"></div>
+          </section>
 
-      <!-- Metric cards -->
-      <section class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div class="text-xs uppercase tracking-wide text-slate-500">Steps (7d)</div>
-          <div id="metricSteps" class="mt-1 text-2xl font-semibold tabular-nums">—</div>
-        </div>
-        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div class="text-xs uppercase tracking-wide text-slate-500">Calories (7d)</div>
-          <div id="metricCalories" class="mt-1 text-2xl font-semibold tabular-nums">—</div>
-        </div>
-        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div class="text-xs uppercase tracking-wide text-slate-500">Distance (7d)</div>
-          <div id="metricDistance" class="mt-1 text-2xl font-semibold tabular-nums">—</div>
-        </div>
-        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div class="text-xs uppercase tracking-wide text-slate-500">Avg heart rate</div>
-          <div id="metricHeart" class="mt-1 text-2xl font-semibold tabular-nums">—</div>
-        </div>
-      </section>
+          <section class="panel history-panel" aria-labelledby="historyHeading">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Nightly detail</p>
+                <h2 id="historyHeading">Recent sleep</h2>
+              </div>
+              <span class="subtle-stat">Newest first</span>
+            </div>
+            <div class="history-header" aria-hidden="true">
+              <span>Night</span>
+              <span>Period</span>
+              <span>Asleep</span>
+              <span>Efficiency</span>
+              <span>Stages</span>
+            </div>
+            <div id="nightHistory" class="history-list"></div>
+          </section>
 
-      <!-- Message / error banner -->
-      <div id="banner" class="mt-6 hidden rounded-xl border p-4 text-sm"></div>
-
-      <!-- Raw response -->
-      <section class="mt-6">
-        <div class="flex items-center justify-between">
-          <h2 class="text-sm font-medium text-slate-300">Raw response</h2>
-          <span id="elapsed" class="text-xs text-slate-500"></span>
+          <section id="napsPanel" class="panel history-panel" aria-labelledby="napsHeading" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Daytime sleep</p>
+                <h2 id="napsHeading">Naps</h2>
+              </div>
+              <span id="napsCount" class="subtle-stat"></span>
+            </div>
+            <div id="napHistory" class="nap-list"></div>
+          </section>
         </div>
-        <pre id="raw" class="mt-2 max-h-96 overflow-auto rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs leading-relaxed text-slate-300">Click “Sync from Google Fit” to call the n8n webhook.</pre>
-      </section>
 
-      <footer class="mt-10 text-center text-xs text-slate-600">
-        n8n: <span class="text-slate-500">n8n.philippeho.dev</span> · data: Google Fit REST API
+        <details id="diagnosticsPanel" class="panel diagnostics-panel">
+          <summary>
+            <span>
+              <strong>Diagnostics</strong>
+              <small id="syncMeta">No sync completed</small>
+            </span>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="m8 10 4 4 4-4"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </summary>
+          <pre id="rawResponse">The n8n response will appear here after the first sync.</pre>
+        </details>
+      </main>
+
+      <footer class="footer">
+        <span>Live data from Google Health through n8n</span>
+        <span aria-hidden="true">·</span>
+        <span>No sleep data is stored by this dashboard</span>
       </footer>
     </div>
 
-    <script src="/app.js"></script>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

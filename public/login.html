@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b0e14" />
+    <title>Sign in — FitbitTracker</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23b9dc8c' d='M20.7 15.2A8.5 8.5 0 0 1 8.8 3.3 9 9 0 1 0 20.7 15.2Z'/></svg>"
+    />
+  </head>
+  <body class="login-body">
+    <main class="login-shell">
+      <section class="login-intro" aria-labelledby="loginHeading">
+        <span class="brand-mark brand-mark-large" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path
+              d="M20.4 15.2A8.2 8.2 0 0 1 8.8 3.6a8.7 8.7 0 1 0 11.6 11.6Z"
+              fill="currentColor"
+            />
+          </svg>
+        </span>
+        <p class="eyebrow">Private dashboard</p>
+        <h1 id="loginHeading">Your sleep, without the noise.</h1>
+        <p>
+          A focused seven-night view of Fitbit and Pixel Watch sleep data fetched live through
+          Google Health.
+        </p>
+        <div class="login-privacy">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12v10H6V10Z"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span>The browser never receives Google or n8n credentials.</span>
+        </div>
+      </section>
+
+      <section class="login-card">
+        <div>
+          <p class="eyebrow">Welcome back</p>
+          <h2>Sign in to FitbitTracker</h2>
+          <p>Use the dashboard password configured for this deployment.</p>
+        </div>
+
+        <form id="loginForm" class="login-form">
+          <input
+            class="username-hint"
+            name="username"
+            type="text"
+            value="fitbit-dashboard"
+            autocomplete="username"
+            tabindex="-1"
+            aria-hidden="true"
+          />
+          <label for="password">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            autofocus
+          />
+          <p id="loginError" class="form-error" role="alert" hidden></p>
+          <button id="loginButton" class="primary-button primary-button-wide" type="submit">
+            <span id="loginSpinner" class="button-spinner" hidden aria-hidden="true"></span>
+            <span id="loginLabel">Open dashboard</span>
+          </button>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="/login.js"></script>
+  </body>
+</html>
