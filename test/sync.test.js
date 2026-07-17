@@ -81,6 +81,34 @@ function syncRequest(chunks) {
   };
 }
 
+test('manual-only worker polls queued jobs without creating a scheduled sync interval', async () => {
+  const timeouts = [];
+  const intervals = [];
+  const service = createSyncService({
+    pool: {},
+    repository: {
+      recoverStaleClaims: async () => {},
+      claimNextChunk: async () => null,
+    },
+    gateway: {},
+    writer: {},
+    timers: {
+      setTimeout: (callback, delay) => (timeouts.push({ callback, delay }), timeouts.length),
+      clearTimeout: () => {},
+      setInterval: (callback, delay) => (intervals.push({ callback, delay }), intervals.length),
+      clearInterval: () => {},
+    },
+  });
+
+  service.start({ scheduleEnabled: false });
+  await new Promise(setImmediate);
+
+  assert.equal(timeouts.length, 1);
+  assert.equal(timeouts[0].delay, 0);
+  assert.equal(intervals.length, 0);
+  service.stop();
+});
+
 test('sync planner respects metric limits and schedules recent windows first', () => {
   const heart = planMetricWindows({
     metric: 'heart-rate',

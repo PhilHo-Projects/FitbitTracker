@@ -276,7 +276,9 @@ if (isDirectRun) {
   const server = app.listen(port, () => {
     console.log(`Personal Health Data Hub listening on http://localhost:${port}`);
   });
-  syncService?.start();
+  syncService?.start({
+    scheduleEnabled: process.env.SYNC_SCHEDULE_ENABLED !== 'false',
+  });
   exportService?.start();
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, async () => {
