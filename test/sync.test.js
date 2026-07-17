@@ -33,6 +33,54 @@ async function createEmptyDatabase() {
   return pool;
 }
 
+function delayActiveJobReads(pool, expectedReads) {
+  let reads = 0;
+  let release;
+  const allReadsStarted = new Promise((resolve) => {
+    release = resolve;
+  });
+
+  return {
+    ...pool,
+    async connect() {
+      const client = await pool.connect();
+      let inTransaction = false;
+      return {
+        ...client,
+        async query(text, values) {
+          const result = await client.query(text, values);
+          if (text === 'BEGIN') inTransaction = true;
+          if (text === 'COMMIT' || text === 'ROLLBACK') inTransaction = false;
+          if (
+            inTransaction &&
+            typeof text === 'string' &&
+            text.includes('SELECT * FROM sync_jobs') &&
+            text.includes("status IN ('queued', 'running')")
+          ) {
+            reads += 1;
+            if (reads === expectedReads) release();
+            await allReadsStarted;
+          }
+          return result;
+        },
+        release: client.release.bind(client),
+      };
+    },
+  };
+}
+
+function syncRequest(chunks) {
+  return {
+    sourceAccountId: '75ce6554-70c7-48be-a688-d0079384fcb1',
+    jobType: 'incremental',
+    requestedBy: 'test',
+    startDate: '2026-07-03',
+    endDateExclusive: '2026-07-17',
+    metrics: ['heart-rate'],
+    chunks,
+  };
+}
+
 test('sync planner respects metric limits and schedules recent windows first', () => {
   const heart = planMetricWindows({
     metric: 'heart-rate',
@@ -256,6 +304,65 @@ test('persistent chunks checkpoint pagination and prevent overlapping active job
   assert.equal(status.recent[0].status, 'completed');
   assert.equal(status.recent[0].completedChunks, 2);
 
+  await pool.end();
+});
+
+test('simultaneous enqueue attempts share one active job', async () => {
+  const pool = await createDatabase();
+  const repository = createSyncRepository(delayActiveJobReads(pool, 2), { advisoryLocks: false });
+  const request = syncRequest([
+    {
+      metric: 'heart-rate',
+      operation: 'list',
+      startDate: '2026-07-03',
+      endDateExclusive: '2026-07-17',
+      pageToken: null,
+    },
+  ]);
+
+  const [first, second] = await Promise.all([repository.enqueue(request), repository.enqueue(request)]);
+  const active = await pool.query(
+    "SELECT id FROM sync_jobs WHERE status IN ('queued', 'running') ORDER BY created_at",
+  );
+
+  assert.equal(active.rowCount, 1);
+  assert.equal(second.id, first.id);
+  await pool.end();
+});
+
+test('only one chunk per source account runs until it completes or requeues', async () => {
+  const pool = await createDatabase();
+  const repository = createSyncRepository(pool, { advisoryLocks: false });
+  await repository.enqueue(
+    syncRequest([
+      {
+        metric: 'heart-rate',
+        operation: 'list',
+        startDate: '2026-07-03',
+        endDateExclusive: '2026-07-10',
+        pageToken: null,
+      },
+      {
+        metric: 'heart-rate',
+        operation: 'list',
+        startDate: '2026-07-10',
+        endDateExclusive: '2026-07-17',
+        pageToken: null,
+      },
+    ]),
+  );
+
+  const first = await repository.claimNextChunk('worker-1');
+  assert.equal((await repository.claimNextChunk('worker-2')), null);
+
+  await repository.completeChunk(first, { nextPageToken: null });
+  const second = await repository.claimNextChunk('worker-2');
+  assert.ok(second);
+  assert.notEqual(second.id, first.id);
+
+  await repository.failChunk(second, new Error('retry'), { delayMs: 0 });
+  const requeued = await repository.claimNextChunk('worker-3');
+  assert.equal(requeued.id, second.id);
   await pool.end();
 });
 

@@ -5,7 +5,7 @@ import { newDb } from 'pg-mem';
 
 import { applyMigrations } from '../lib/db/migrations.js';
 
-test('initial migration creates the permanent health archive tables once', async () => {
+test('migrations create the permanent health archive tables once', async () => {
   const memory = newDb({ noAstCoverageCheck: true });
   const adapter = memory.adapters.createPg();
   const pool = new adapter.Pool();
@@ -19,7 +19,7 @@ test('initial migration creates the permanent health archive tables once', async
     ORDER BY table_name
   `);
 
-  assert.deepEqual(first, ['001_initial.sql']);
+  assert.deepEqual(first, ['001_initial.sql', '002_sync_queue_concurrency.sql']);
   assert.deepEqual(second, []);
   assert.deepEqual(
     tables.rows.map(({ table_name: name }) => name),
@@ -38,6 +38,7 @@ test('initial migration creates the permanent health archive tables once', async
       'sleep_sessions',
       'sleep_stages',
       'source_accounts',
+      'sync_account_claims',
       'sync_chunks',
       'sync_jobs',
     ],
