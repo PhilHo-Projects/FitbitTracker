@@ -42,8 +42,8 @@ export function createDevelopmentConfig({ mode = 'live', sourceEnv = {} } = {}) 
     delete env.N8N_WEBHOOK_TOKEN;
   } else {
     validateLiveGateway(env);
-    env.SYNC_SCHEDULE_ENABLED = 'false';
   }
+  env.SYNC_SCHEDULE_ENABLED = 'false';
 
   const seedFixtures = mode === 'fixtures';
   const composeProjectName = `health-hub-${mode}`;

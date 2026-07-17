@@ -20,13 +20,17 @@ test('default development mode requires live gateway credentials and uses the li
 });
 
 test('fixture mode has no n8n dependency and uses a different volume', () => {
-  const config = createDevelopmentConfig({ mode: 'fixtures', sourceEnv: {} });
+  const config = createDevelopmentConfig({
+    mode: 'fixtures',
+    sourceEnv: { SYNC_SCHEDULE_ENABLED: 'true' },
+  });
 
   assert.equal(config.seedFixtures, true);
   assert.equal(config.composeProjectName, 'health-hub-fixtures');
   assert.equal(config.postgresVolume, 'health-hub-postgres-fixtures');
   assert.equal(config.env.N8N_WEBHOOK_URL, undefined);
   assert.equal(config.env.N8N_WEBHOOK_TOKEN, undefined);
+  assert.equal(config.env.SYNC_SCHEDULE_ENABLED, 'false');
 });
 
 test('live mode rejects missing, placeholder, or legacy gateway configuration', () => {
