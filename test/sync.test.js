@@ -617,6 +617,67 @@ test('sync worker ingests a chunk, recalculates its day, and completes the job',
   await pool.end();
 });
 
+test('sync worker converts PostgreSQL date objects before filtering sleep records', async () => {
+  const pool = await createDatabase();
+  const repository = createSyncRepository(pool, { advisoryLocks: false });
+  const service = createSyncService({
+    pool,
+    repository,
+    writer: createMetricWriter(pool),
+    gateway: {
+      request: async () => ({
+        ok: true,
+        metric: 'sleep',
+        status: 200,
+        data: {
+          dataPoints: [
+            {
+              dataPointName: 'worker-sleep',
+              sleep: {
+                interval: {
+                  startTime: '2026-07-17T03:00:00Z',
+                  endTime: '2026-07-17T11:00:00Z',
+                  startUtcOffset: '-14400s',
+                  endUtcOffset: '-14400s',
+                  civilEndTime: {
+                    date: { year: 2026, month: 7, day: 17 },
+                    time: { hours: 7 },
+                  },
+                },
+                type: 'STAGES',
+                metadata: { nap: false, processed: true, stagesStatus: 'SUCCEEDED' },
+                summary: {
+                  minutesInSleepPeriod: '480',
+                  minutesAsleep: '450',
+                  minutesAwake: '30',
+                  stagesSummary: [],
+                },
+                stages: [],
+              },
+            },
+          ],
+        },
+        nextPageToken: null,
+      }),
+    },
+  });
+
+  await service.enqueue({
+    mode: 'custom',
+    startDate: '2026-07-17',
+    endDateExclusive: '2026-07-18',
+    metrics: ['sleep'],
+    requestedBy: 'test',
+  });
+  await service.runOnce();
+
+  const sessions = await pool.query('SELECT provider_key, civil_date FROM sleep_sessions');
+  assert.equal(sessions.rowCount, 1);
+  assert.equal(sessions.rows[0].provider_key, 'worker-sleep');
+  assert.equal(new Date(sessions.rows[0].civil_date).toISOString().slice(0, 10), '2026-07-17');
+  await pool.end();
+});
+
 test('first sync bootstraps the source account from profile membership date and identity', async () => {
   const pool = await createEmptyDatabase();
   const repository = createSyncRepository(pool, { advisoryLocks: false });
