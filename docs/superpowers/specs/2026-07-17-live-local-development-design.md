@@ -3,8 +3,9 @@
 ## Goal
 
 Make `npm run dev` start the newer Personal Health Data Hub locally with password `0000`, a
-local PostgreSQL archive, and live synchronization through the existing authenticated n8n
-gateway on Hetzner. Running n8n on the laptop is explicitly out of scope.
+local PostgreSQL archive, and live synchronization through a dedicated authenticated gateway
+workflow on the existing Hetzner n8n instance. Running n8n on the laptop is explicitly out of
+scope.
 
 ## Current Regression
 
@@ -24,10 +25,38 @@ Google Health data.
 4. Apply all database migrations without seeding fixture records.
 5. Build Tailwind and start the Express application on `http://localhost:3000`.
 6. Accept the local dashboard password `0000`.
-7. Start the sync worker with the Hetzner n8n URL and Header Auth token from `.env.local`.
+7. Start the sync worker with the new Hetzner health-hub gateway URL and Header Auth token from
+   `.env.local`.
+8. Process manual Sync-button and explicit test requests without scheduling automatic local
+   synchronization.
 
 The existing Hetzner n8n instance remains the only n8n runtime. It continues to own Google OAuth
-and the allow-listed Google Health gateway. The browser never receives the n8n token.
+and both authenticated Google Health webhooks. The browser never receives the n8n token.
+
+## Hetzner Gateway Migration
+
+The active `fitness-sync` workflow is the six-node sleep-only contract used by the currently
+deployed dashboard. Replacing it would break that application before the newer hub is deployed.
+It therefore remains active and unchanged during local development.
+
+A second workflow will be created and published on the same Hetzner n8n instance:
+
+```text
+Workflow ID:   healthHubGateway001
+Workflow name: Personal Health Data Hub — Google Health gateway
+Webhook path:  /webhook/health-hub-sync
+Trigger type:  authenticated Webhook only
+```
+
+The workflow reuses the existing `FitbitTracker Webhook Auth` Header Auth credential and dedicated
+`Google account` OAuth credential. It accepts only the newer operation/metric allow-list and makes
+read-only identity, list, reconcile, and daily-rollup requests to Google Health. It has no n8n
+Schedule Trigger, cron, or autonomous execution path.
+
+During local development the workflow runs only when the application worker processes a request
+created by the Sync button or an explicit development test. After the newer hub is deployed and
+verified, production will switch to this gateway and the legacy sleep-only workflow can be retired
+in a separate cutover task.
 
 ## Development Modes
 
@@ -40,6 +69,8 @@ Command: `npm run dev`
 - Uses local password `0000` regardless of production credentials.
 - Uses the live-development PostgreSQL volume.
 - Does not seed fixtures.
+- Disables the application's automatic three-hour enqueue timer while leaving its queue worker
+  active for manual requests.
 - Persists synchronized health data across restarts.
 
 The initial local `.env.local` will be populated from the existing Hetzner/Coolify integration
@@ -75,6 +106,7 @@ journal entries, sync jobs, and exports stay in the laptop's live-development Po
 - `DASHBOARD_PASSWORD=0000`;
 - a local-only session secret and journal encryption key;
 - the production n8n webhook URL and matching Header Auth token;
+- `SYNC_SCHEDULE_ENABLED=false` so local requests are manual only;
 - the live-development volume selection.
 
 Coolify and production environment variables are unchanged. Secret values must not appear in
@@ -98,9 +130,12 @@ Each failure message must state the corrective action. The launcher must forward
 Automated tests will prove that:
 
 - `npm run dev` selects live mode, loads `.env.local`, requires n8n credentials, uses password
-  `0000`, selects the live database volume, and skips fixture seeding;
+  `0000`, selects the live database volume, skips fixture seeding, and disables scheduled enqueue;
 - `npm run dev:fixtures` selects the fixture volume and seeds deterministic data;
 - the two modes cannot resolve to the same volume;
+- the new n8n workflow has identity `healthHubGateway001`, path `health-hub-sync`, the required
+  credential references and strict read-only allow-list, and no Schedule Trigger;
+- disabling scheduled enqueue does not disable manual queue processing;
 - secret values are absent from tracked examples and generated output;
 - existing session, API, sync, database, workflow, layout, and export tests still pass.
 
@@ -113,12 +148,14 @@ private health records or credentials.
 
 - Installing or maintaining n8n on the laptop.
 - Connecting local development to the production PostgreSQL database.
-- Changing Google OAuth, the n8n workflow, Coolify, or production deployment behavior.
+- Replacing or modifying the active legacy `fitness-sync` workflow.
+- Changing Google OAuth, Coolify, or production application behavior.
 - Committing `.env.local` or any credential.
 
 ## Success Criteria
 
 From the newer `personal-health-data-hub` checkout, a developer with Node.js and Docker Desktop
 can run `npm run dev`, open `http://localhost:3000`, log in with `0000`, trigger synchronization
-through Hetzner n8n, and inspect the resulting real health data stored only in the local PostgreSQL
-volume. Fixture testing remains available through `npm run dev:fixtures`.
+manually through the dedicated Hetzner n8n gateway, and inspect the resulting real health data
+stored only in the local PostgreSQL volume. No local cron or automatic three-hour sync is active.
+Fixture testing remains available through `npm run dev:fixtures`.
