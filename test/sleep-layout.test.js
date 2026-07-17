@@ -11,6 +11,18 @@ async function sources() {
   return { html, app, css };
 }
 
+test('localhost has a hidden-by-default development banner initialized from its hostname', async () => {
+  const { html, app, css } = await sources();
+
+  assert.match(
+    html,
+    /<div id="environmentBanner" class="environment-banner" role="status" hidden>\s*LOCAL DEVELOPMENT\s*<\/div>/,
+  );
+  assert.match(app, /isLocalDevelopmentHost\(window\.location\.hostname\)/);
+  assert.match(css, /\.environment-banner\s*\{/);
+  assert.match(css, /\.app-body\.is-local-development \.app-header\s*\{/);
+});
+
 test('Today keeps only Asleep and Efficiency beside the primary sleep duration', async () => {
   const { html, app } = await sources();
   const todaySleep = html.slice(

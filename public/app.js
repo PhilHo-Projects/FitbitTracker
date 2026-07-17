@@ -5,6 +5,7 @@ import {
   dateRangeForPreset,
   exportPollingNeeded,
   formatDuration,
+  isLocalDevelopmentHost,
   scaleSleepTrendRows,
   sleepStageBreakdown,
   sleepTrendRange,
@@ -12,6 +13,9 @@ import {
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const localDevelopment = isLocalDevelopmentHost(window.location.hostname);
+$('#environmentBanner').hidden = !localDevelopment;
+document.body.classList.toggle('is-local-development', localDevelopment);
 const profileTimezone = 'America/Toronto';
 let today = civilDateInTimeZone(new Date(), profileTimezone);
 const stageNames = { awake: 'Awake', light: 'Light', deep: 'Deep', rem: 'REM' };

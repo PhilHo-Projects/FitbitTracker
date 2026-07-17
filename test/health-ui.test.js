@@ -8,10 +8,18 @@ import {
   dateRangeForPreset,
   exportPollingNeeded,
   formatDuration,
+  isLocalDevelopmentHost,
   scaleSleepTrendRows,
   sleepStageBreakdown,
   sleepTrendRange,
 } from '../public/health-ui.js';
+
+test('development indicator recognizes only loopback browser hosts', () => {
+  for (const hostname of ['localhost', '127.0.0.1', '::1', '[::1]']) {
+    assert.equal(isLocalDevelopmentHost(hostname), true);
+  }
+  assert.equal(isLocalDevelopmentHost('fitbit.philippeho.dev'), false);
+});
 
 test('Today sleep summary keeps four stages in one row using the full period denominator', () => {
   const breakdown = sleepStageBreakdown(

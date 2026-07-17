@@ -232,3 +232,9 @@ export function scaleSleepTrendRows(rows, targetMinutes = 420) {
 export function exportPollingNeeded(jobs = []) {
   return jobs.some(({ status }) => status === 'queued' || status === 'running');
 }
+
+export function isLocalDevelopmentHost(hostname) {
+  return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(
+    String(hostname || '').toLowerCase(),
+  );
+}
