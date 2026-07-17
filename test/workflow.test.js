@@ -113,6 +113,31 @@ test('uses the dedicated Google OAuth credential and returns the stable gateway 
   );
 });
 
+test('maps a statusless transport failure to the stable 502 gateway contract', async () => {
+  const workflow = await loadWorkflow();
+  const shapeCode = nodeByName(workflow, 'Shape Response').parameters.jsCode;
+  const shape = new Function('$input', '$', shapeCode);
+
+  const shaped = shape(
+    { first: () => ({ json: { error: 'connect ETIMEDOUT' } }) },
+    () => ({
+      first: () => ({
+        json: { context: { metric: 'heart-rate', requestId: 'transport-request-1' } },
+      }),
+    }),
+  )[0].json;
+
+  assert.deepEqual(shaped, {
+    ok: false,
+    metric: 'heart-rate',
+    status: 502,
+    data: null,
+    nextPageToken: null,
+    requestId: 'transport-request-1',
+    message: 'Google Health request failed',
+  });
+});
+
 test('generated Code nodes execute the list, daily-rollup, and error contracts', async () => {
   const workflow = await loadWorkflow();
   const prepareCode = nodeByName(workflow, 'Validate and Prepare').parameters.jsCode;

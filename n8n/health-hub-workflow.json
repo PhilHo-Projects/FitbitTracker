@@ -79,7 +79,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const context = $('Validate and Prepare').first().json.context;\nconst response = $input.first().json;\nconst status = Number(response.statusCode ?? response.status ?? 200);\nconst body = response.body !== undefined ? response.body : response;\nconst ok = status >= 200 && status < 300 && !body?.error;\n\nreturn [{\n  json: {\n    ok,\n    metric: context.metric,\n    status,\n    data: ok ? body : null,\n    nextPageToken: ok ? (body?.nextPageToken ?? null) : null,\n    requestId: context.requestId,\n    message: ok ? null : (body?.error?.message ?? body?.message ?? 'Google Health request failed'),\n  },\n}];"
+        "jsCode": "const context = $('Validate and Prepare').first().json.context;\nconst response = $input.first().json;\nconst parsedStatus = Number(response.statusCode ?? response.status);\nconst status = Number.isInteger(parsedStatus) && parsedStatus >= 100 && parsedStatus <= 599\n  ? parsedStatus\n  : 502;\nconst body = response.body !== undefined ? response.body : response;\nconst ok = status >= 200 && status < 300 && !body?.error;\n\nreturn [{\n  json: {\n    ok,\n    metric: context.metric,\n    status,\n    data: ok ? body : null,\n    nextPageToken: ok ? (body?.nextPageToken ?? null) : null,\n    requestId: context.requestId,\n    message: ok ? null : (body?.error?.message ?? body?.message ?? 'Google Health request failed'),\n  },\n}];"
       },
       "id": "node-shape-response",
       "name": "Shape Response",

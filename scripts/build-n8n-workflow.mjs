@@ -126,7 +126,10 @@ return [{
 
 const shapeCode = `const context = $('Validate and Prepare').first().json.context;
 const response = $input.first().json;
-const status = Number(response.statusCode ?? response.status ?? 200);
+const parsedStatus = Number(response.statusCode ?? response.status);
+const status = Number.isInteger(parsedStatus) && parsedStatus >= 100 && parsedStatus <= 599
+  ? parsedStatus
+  : 502;
 const body = response.body !== undefined ? response.body : response;
 const ok = status >= 200 && status < 300 && !body?.error;
 
