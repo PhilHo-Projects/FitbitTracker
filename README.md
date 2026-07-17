@@ -68,6 +68,10 @@ Both local modes use password `0000` and separate PostgreSQL volumes:
 `npm run dev:fixtures`. `npm run dev:live` remains an alias for `npm run dev`.
 Set `SKIP_LOCAL_DATABASE=true` only when `DATABASE_URL` points to a database managed separately.
 
+Local and production use the same schema but separate persistent PostgreSQL data stores. Before the
+first health-hub deployment, follow the [Hetzner promotion guide](docs/hetzner-promotion.md) for the
+one-time Coolify PostgreSQL setup and safe cutover from the legacy dashboard.
+
 For a lightweight UI preview backed by in-memory deterministic fixtures:
 
 ```bash
