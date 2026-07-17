@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const workflowPath = new URL('../n8n/health-hub-workflow.json', import.meta.url);
 const legacyWorkflowPath = new URL('../n8n/fitness-workflow.json', import.meta.url);
@@ -79,14 +80,15 @@ test('validates the strict operation and metric allow-list before building Googl
   const code = prepare.parameters.jsCode;
 
   assert.doesNotThrow(() => new Function('$input', code));
-  assert.match(code, /profile.*identity.*list.*reconcile.*dailyRollup/s);
+  assert.match(code, /profile.*identity.*list.*reconcile.*rollUp/s);
+  assert.doesNotMatch(code, /dailyRollup/);
   assert.match(code, /sleep.*heart-rate.*daily-resting-heart-rate/s);
   assert.match(code, /total-calories.*active-energy-burned.*basal-energy-burned/s);
   assert.match(code, /Unsupported operation and metric combination/);
   assert.match(code, /https:\/\/health\.googleapis\.com\/v4\/users\/me/);
   assert.match(code, /heart_rate\.sample_time\.civil_time/);
   assert.match(code, /sleep\.interval\.civil_end_time/);
-  assert.match(code, /dataPoints:dailyRollUp/);
+  assert.match(code, /dataPoints:rollUp/);
 });
 
 test('uses the dedicated Google OAuth credential and returns the stable gateway contract', async () => {
@@ -138,11 +140,25 @@ test('maps a statusless transport failure to the stable 502 gateway contract', a
   });
 });
 
-test('generated Code nodes execute the list, daily-rollup, and error contracts', async () => {
+test('generated Code nodes execute the list, total-calories, and error contracts', async () => {
   const workflow = await loadWorkflow();
   const prepareCode = nodeByName(workflow, 'Validate and Prepare').parameters.jsCode;
   const shapeCode = nodeByName(workflow, 'Shape Response').parameters.jsCode;
-  const prepare = new Function('$input', prepareCode);
+  const prepare = new Function('$input', 'DateTime', prepareCode);
+  const fakeDateTime = {
+    fromISO(value) {
+      const times = {
+        '2026-03-08T00:00:00': ['2026-03-08T05:00:00.000Z', 1_773_031_200],
+        '2026-03-09T00:00:00': ['2026-03-09T04:00:00.000Z', 1_773_114_000],
+      };
+      const [iso, seconds] = times[value] ?? ['2026-07-03T04:00:00.000Z', 1_783_051_200];
+      return {
+        isValid: true,
+        toSeconds: () => seconds,
+        toUTC: () => ({ toISO: () => iso }),
+      };
+    },
+  };
 
   const list = prepare({
     first: () => ({
@@ -156,27 +172,47 @@ test('generated Code nodes execute the list, daily-rollup, and error contracts',
         },
       },
     }),
-  })[0].json;
-  const rollup = prepare({
+  }, fakeDateTime)[0].json;
+  const totalCalories = prepare({
     first: () => ({
       json: {
         body: {
-          operation: 'dailyRollup',
+          operation: 'rollUp',
           metric: 'total-calories',
+          startDate: '2026-03-08',
+          endDateExclusive: '2026-03-09',
+          pageToken: null,
+          timezone: 'America/Toronto',
+        },
+      },
+    }),
+  }, fakeDateTime)[0].json;
+  const reconcile = prepare({
+    first: () => ({
+      json: {
+        body: {
+          operation: 'reconcile',
+          metric: 'sleep',
           startDate: '2026-07-03',
           endDateExclusive: '2026-07-17',
           pageToken: null,
         },
       },
     }),
-  })[0].json;
+  }, fakeDateTime)[0].json;
 
   assert.equal(list.request.method, 'GET');
   assert.match(list.request.url, /dataTypes\/heart-rate\/dataPoints/);
   assert.match(list.request.url, /pageToken=page-2/);
-  assert.equal(rollup.request.method, 'POST');
-  assert.equal(rollup.request.body.windowSizeDays, 1);
-  assert.deepEqual(rollup.request.body.range.start.date, { year: 2026, month: 7, day: 3 });
+  assert.doesNotMatch(list.request.url, /dataSourceFamily/);
+  assert.match(reconcile.request.url, /dataSourceFamily/);
+  assert.equal(totalCalories.request.method, 'POST');
+  assert.match(totalCalories.request.url, /dataTypes\/total-calories\/dataPoints:rollUp/);
+  assert.deepEqual(totalCalories.request.body.range, {
+    startTime: '2026-03-08T05:00:00.000Z',
+    endTime: '2026-03-09T04:00:00.000Z',
+  });
+  assert.equal(totalCalories.request.body.windowSize, '3600s');
   assert.throws(
     () =>
       prepare({
@@ -184,7 +220,7 @@ test('generated Code nodes execute the list, daily-rollup, and error contracts',
           json: {
             body: {
               operation: 'dailyRollup',
-              metric: 'heart-rate',
+              metric: 'total-calories',
               startDate: '2026-07-03',
               endDateExclusive: '2026-07-17',
             },
@@ -212,4 +248,27 @@ test('generated Code nodes execute the list, daily-rollup, and error contracts',
     requestId: 'request-1',
     message: 'unavailable',
   });
+});
+
+test('list requests can be prepared inside the n8n Code-node sandbox', async () => {
+  const workflow = await loadWorkflow();
+  const prepareCode = nodeByName(workflow, 'Validate and Prepare').parameters.jsCode;
+  const prepared = runInNewContext(`(function () { ${prepareCode} })()`, {
+    $input: {
+      first: () => ({
+        json: {
+          body: {
+            operation: 'list',
+            metric: 'heart-rate',
+            startDate: '2026-07-16',
+            endDateExclusive: '2026-07-17',
+            pageToken: 'page-2',
+          },
+        },
+      }),
+    },
+  });
+
+  assert.equal(prepared[0].json.request.method, 'GET');
+  assert.match(prepared[0].json.request.url, /pageToken=page-2/);
 });

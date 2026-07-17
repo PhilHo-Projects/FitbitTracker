@@ -17,12 +17,22 @@ if (mode === 'live') {
 const config = createDevelopmentConfig({ mode, sourceEnv: process.env });
 
 if (config.env.SKIP_LOCAL_DATABASE !== 'true') {
+  for (const projectName of config.conflictingComposeProjectNames) {
+    const stopped = spawnSync(
+      'docker',
+      [
+        'compose', '-p', projectName,
+        '-f', 'docker-compose.dev.yml', 'down', '--remove-orphans',
+      ],
+      { env: config.env, stdio: 'inherit', shell: process.platform === 'win32' },
+    );
+    if (stopped.status !== 0) {
+      throw new Error('Could not switch the local PostgreSQL mode. Start Docker Desktop, then retry npm run dev.');
+    }
+  }
   const docker = spawnSync(
     'docker',
-    [
-      'compose', '-p', config.composeProjectName,
-      '-f', 'docker-compose.dev.yml', 'up', '-d', 'postgres',
-    ],
+    config.composeUpArgs,
     { env: config.env, stdio: 'inherit', shell: process.platform === 'win32' },
   );
   if (docker.status !== 0) {

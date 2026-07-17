@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises';
 const workflowPath = new URL('../n8n/health-hub-workflow.json', import.meta.url);
 
 const prepareCode = `const input = $input.first().json.body ?? {};
-const operations = ['profile', 'identity', 'list', 'reconcile', 'dailyRollup'];
+const operations = ['profile', 'identity', 'list', 'reconcile', 'rollUp'];
 const metrics = [
   'sleep',
   'heart-rate',
@@ -22,7 +22,7 @@ const combinations = {
     'basal-energy-burned',
   ],
   reconcile: ['sleep'],
-  dailyRollup: ['total-calories'],
+  rollUp: ['total-calories'],
 };
 
 if (
@@ -42,6 +42,9 @@ if (
 ) {
   throw new Error('A valid closed-open date range is required');
 }
+if (input.operation === 'rollUp' && !String(input.timezone || '').trim()) {
+  throw new Error('A timezone is required for total-calories rollup');
+}
 
 const base = 'https://health.googleapis.com/v4/users/me';
 const snake = {
@@ -57,11 +60,6 @@ const filterField = {
   'active-energy-burned': 'active_energy_burned.interval.civil_start_time',
   'basal-energy-burned': 'basal_energy_burned.interval.civil_start_time',
 };
-
-function dateObject(value) {
-  const [year, month, day] = value.split('-').map(Number);
-  return { year, month, day };
-}
 
 function requestId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -79,32 +77,40 @@ if (input.operation === 'profile' || input.operation === 'identity') {
     url: \`\${base}/\${input.operation}\`,
     body: null,
   };
-} else if (input.operation === 'dailyRollup') {
+} else if (input.operation === 'rollUp') {
+  const start = DateTime.fromISO(\`\${input.startDate}T00:00:00\`, { zone: input.timezone });
+  const end = DateTime.fromISO(\`\${input.endDateExclusive}T00:00:00\`, { zone: input.timezone });
+  const rangeSeconds = Math.round(end.toSeconds() - start.toSeconds());
+  if (!start.isValid || !end.isValid || rangeSeconds <= 0) {
+    throw new Error('Unable to build the total-calories rollup window');
+  }
   request = {
     method: 'POST',
-    url: \`\${base}/dataTypes/\${input.metric}/dataPoints:dailyRollUp\`,
+    url: \`\${base}/dataTypes/\${input.metric}/dataPoints:rollUp\`,
     body: {
       range: {
-        start: { date: dateObject(input.startDate), time: {} },
-        end: { date: dateObject(input.endDateExclusive), time: {} },
+        startTime: start.toUTC().toISO(),
+        endTime: end.toUTC().toISO(),
       },
-      windowSizeDays: 1,
-      pageSize: 10000,
-      pageToken: input.pageToken || undefined,
-      dataSourceFamily: 'users/me/dataSourceFamilies/google-wearables',
+      windowSize: '3600s',
     },
   };
 } else {
   const suffix = input.operation === 'reconcile' ? 'dataPoints:reconcile' : 'dataPoints';
-  const query = new URLSearchParams({
-    dataSourceFamily: 'users/me/dataSourceFamilies/google-wearables',
+  const query = {
     pageSize: input.metric === 'sleep' ? '25' : '10000',
     filter: \`\${filterField[input.metric]} >= "\${input.startDate}" AND \${filterField[input.metric]} < "\${input.endDateExclusive}"\`,
-  });
-  if (input.pageToken) query.set('pageToken', input.pageToken);
+  };
+  if (input.operation === 'reconcile') {
+    query.dataSourceFamily = 'users/me/dataSourceFamilies/google-wearables';
+  }
+  if (input.pageToken) query.pageToken = input.pageToken;
+  const queryString = Object.entries(query)
+    .map(([key, value]) => \`\${encodeURIComponent(key)}=\${encodeURIComponent(value)}\`)
+    .join('&');
   request = {
     method: 'GET',
-    url: \`\${base}/dataTypes/\${input.metric}/\${suffix}?\${query.toString()}\`,
+    url: \`\${base}/dataTypes/\${input.metric}/\${suffix}?\${queryString}\`,
     body: null,
   };
 }
@@ -118,6 +124,7 @@ return [{
       startDate: input.startDate ?? null,
       endDateExclusive: input.endDateExclusive ?? null,
       pageToken: input.pageToken ?? null,
+      timezone: input.timezone ?? null,
       requestId: requestId(),
       filterName: snake[input.metric] ?? null,
     },

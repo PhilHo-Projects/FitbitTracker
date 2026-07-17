@@ -54,6 +54,8 @@ Local password: `0000`
 
 Local development uses the existing remote n8n gateway; it does not install or run n8n locally.
 Automatic sync scheduling is disabled locally, so all syncs are started manually through the app.
+The first real-data sync can take several minutes when Google returns dense heart-rate history;
+progress is checkpointed page by page and remains visible in the app.
 
 For deterministic offline fixtures with no n8n dependency:
 
@@ -105,8 +107,13 @@ The initial schema is in `db/migrations/001_initial.sql`. It stores:
 The worker synchronizes every three hours and supports manual recent, custom, and all-history jobs.
 Windows are newest-first and remain within Google Health limits:
 
-- 14 days: heart rate and total calories.
+- 14 days: heart rate.
+- 1 day: total calories when explicitly requested.
 - 90 days: sleep, daily resting heart rate, active energy, and basal energy.
+
+Google Health currently rejects documented `total-calories` rollup ranges with `400 Invalid time
+range`. The gateway keeps the allow-listed operation available, but default syncs omit it so sleep,
+heart rate, daily resting heart rate, active energy, and basal energy can finish successfully.
 
 Every metric/window/page is checkpointed. Transient 429/5xx responses use bounded exponential
 backoff, stale claims are recovered after restart, and metrics can complete independently.

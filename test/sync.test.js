@@ -120,12 +120,37 @@ test('sync planner respects metric limits and schedules recent windows first', (
     startDate: '2026-01-01',
     endDateExclusive: '2026-07-17',
   });
+  const totalCalories = planMetricWindows({
+    metric: 'total-calories',
+    startDate: '2026-07-10',
+    endDateExclusive: '2026-07-17',
+  });
 
   assert.equal(heart[0].endDateExclusive, '2026-07-17');
   assert.equal(heart[0].startDate, '2026-07-03');
   assert.ok(heart.every((window) => window.days <= 14));
   assert.ok(sleep.every((window) => window.days <= 90));
   assert.equal(sleep.at(-1).startDate, '2026-01-01');
+  assert.ok(totalCalories.every((window) => window.days === 1));
+  assert.ok(totalCalories.every((window) => window.operation === 'rollUp'));
+});
+
+test('default sync omits the currently unavailable Google total-calories rollup', () => {
+  const chunks = planSyncChunks({
+    startDate: '2026-07-16',
+    endDateExclusive: '2026-07-17',
+  });
+
+  assert.deepEqual(
+    [...new Set(chunks.map(({ metric }) => metric))],
+    [
+      'sleep',
+      'heart-rate',
+      'daily-resting-heart-rate',
+      'active-energy-burned',
+      'basal-energy-burned',
+    ],
+  );
 });
 
 test('multi-metric backfills prioritize the newest window for every metric before older history', () => {
@@ -236,6 +261,14 @@ test('gateway enforces the allow-list and forwards the bounded request contract'
     endDateExclusive: '2026-07-17',
     pageToken: null,
   });
+  await gateway.request({
+    operation: 'rollUp',
+    metric: 'total-calories',
+    startDate: '2026-07-03',
+    endDateExclusive: '2026-07-17',
+    pageToken: null,
+    timezone: 'America/Toronto',
+  });
   await assert.rejects(
     () => gateway.request({ operation: 'delete', metric: 'heart-rate' }),
     /Unsupported gateway request/,
@@ -244,7 +277,7 @@ test('gateway enforces the allow-list and forwards the bounded request contract'
     () =>
       gateway.request({
         operation: 'dailyRollup',
-        metric: 'heart-rate',
+        metric: 'total-calories',
         startDate: '2026-07-03',
         endDateExclusive: '2026-07-17',
       }),
@@ -252,7 +285,7 @@ test('gateway enforces the allow-list and forwards the bounded request contract'
   );
 
   assert.equal(response.nextPageToken, 'next');
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   assert.deepEqual(JSON.parse(calls[0].options.body), {
     operation: 'list',
     metric: 'heart-rate',
@@ -261,6 +294,14 @@ test('gateway enforces the allow-list and forwards the bounded request contract'
     pageToken: null,
   });
   assert.equal(calls[0].options.headers['x-fitness-token'], 'secret');
+  assert.deepEqual(JSON.parse(calls[1].options.body), {
+    operation: 'rollUp',
+    metric: 'total-calories',
+    startDate: '2026-07-03',
+    endDateExclusive: '2026-07-17',
+    pageToken: null,
+    timezone: 'America/Toronto',
+  });
 });
 
 test('gateway preserves tunneled Google status codes so transient failures retry', async () => {
@@ -333,6 +374,25 @@ test('persistent chunks checkpoint pagination and prevent overlapping active job
   assert.equal(status.recent[0].completedChunks, 2);
 
   await pool.end();
+});
+
+test('production claim locks only the chunk row when the claim lookup uses an outer join', async () => {
+  const queries = [];
+  const repository = createSyncRepository({
+    async connect() {
+      return {
+        async query(text) {
+          queries.push(text);
+          return { rows: [] };
+        },
+        release() {},
+      };
+    },
+  });
+
+  assert.equal(await repository.claimNextChunk('worker-1'), null);
+  const claimQuery = queries.find((query) => String(query).includes('FROM sync_chunks chunk'));
+  assert.match(claimQuery, /FOR UPDATE OF chunk SKIP LOCKED/);
 });
 
 test('simultaneous enqueue attempts share one active job', async () => {
@@ -493,12 +553,15 @@ test('stale running chunks are requeued so a restarted worker resumes safely', a
 test('sync worker ingests a chunk, recalculates its day, and completes the job', async () => {
   const pool = await createDatabase();
   const repository = createSyncRepository(pool, { advisoryLocks: false });
+  const gatewayRequests = [];
   const service = createSyncService({
     pool,
     repository,
     writer: createMetricWriter(pool),
     gateway: {
-      request: async () => ({
+      request: async (request) => {
+        gatewayRequests.push(request);
+        return {
         ok: true,
         metric: 'heart-rate',
         status: 200,
@@ -525,7 +588,8 @@ test('sync worker ingests a chunk, recalculates its day, and completes the job',
         },
         nextPageToken: null,
         requestId: 'request-worker',
-      }),
+        };
+      },
     },
     workerId: 'worker-test',
   });
@@ -546,6 +610,9 @@ test('sync worker ingests a chunk, recalculates its day, and completes the job',
   assert.deepEqual(samples.rows.map(({ beats_per_minute: bpm }) => Number(bpm)), [71, 73]);
   assert.equal(Number(daily.average_bpm), 72);
   assert.equal(status.recent[0].status, 'completed');
+  assert.equal(gatewayRequests[0].startDate, '2026-07-16');
+  assert.equal(gatewayRequests[0].endDateExclusive, '2026-07-17');
+  assert.equal(gatewayRequests[0].timezone, 'America/Toronto');
 
   await pool.end();
 });

@@ -47,8 +47,25 @@ export function createDevelopmentConfig({ mode = 'live', sourceEnv = {} } = {}) 
 
   const seedFixtures = mode === 'fixtures';
   const composeProjectName = `health-hub-${mode}`;
+  const conflictingComposeProjectNames = [
+    `health-hub-${mode === 'live' ? 'fixtures' : 'live'}`,
+    'personal-health-data-hub',
+  ];
   const postgresVolume = `health-hub-postgres-${mode}`;
   env.HEALTH_HUB_POSTGRES_VOLUME = postgresVolume;
+  const composeUpArgs = [
+    'compose', '-p', composeProjectName,
+    '-f', 'docker-compose.dev.yml',
+    'up', '-d', '--force-recreate', 'postgres',
+  ];
 
-  return { mode, env, seedFixtures, composeProjectName, postgresVolume };
+  return {
+    mode,
+    env,
+    seedFixtures,
+    composeProjectName,
+    conflictingComposeProjectNames,
+    postgresVolume,
+    composeUpArgs,
+  };
 }

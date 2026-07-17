@@ -14,7 +14,17 @@ test('default development mode requires live gateway credentials and uses the li
 
   assert.equal(config.seedFixtures, false);
   assert.equal(config.composeProjectName, 'health-hub-live');
+  assert.deepEqual(config.conflictingComposeProjectNames, [
+    'health-hub-fixtures',
+    'personal-health-data-hub',
+  ]);
   assert.equal(config.postgresVolume, 'health-hub-postgres-live');
+  assert.deepEqual(config.composeUpArgs.slice(-4), [
+    'up',
+    '-d',
+    '--force-recreate',
+    'postgres',
+  ]);
   assert.equal(config.env.DASHBOARD_PASSWORD, '0000');
   assert.equal(config.env.SYNC_SCHEDULE_ENABLED, 'false');
 });
@@ -27,6 +37,10 @@ test('fixture mode has no n8n dependency and uses a different volume', () => {
 
   assert.equal(config.seedFixtures, true);
   assert.equal(config.composeProjectName, 'health-hub-fixtures');
+  assert.deepEqual(config.conflictingComposeProjectNames, [
+    'health-hub-live',
+    'personal-health-data-hub',
+  ]);
   assert.equal(config.postgresVolume, 'health-hub-postgres-fixtures');
   assert.equal(config.env.N8N_WEBHOOK_URL, undefined);
   assert.equal(config.env.N8N_WEBHOOK_TOKEN, undefined);
