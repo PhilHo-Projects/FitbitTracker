@@ -17,3 +17,4 @@ services:
 
 volumes:
   health-hub-postgres:
+    name: ${HEALTH_HUB_POSTGRES_VOLUME:?HEALTH_HUB_POSTGRES_VOLUME is required}

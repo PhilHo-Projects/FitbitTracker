@@ -1,33 +1,29 @@
 import { spawn, spawnSync } from 'node:child_process';
-import crypto from 'node:crypto';
 import process from 'node:process';
 
 import dotenv from 'dotenv';
 import pg from 'pg';
 
-const live = process.argv.includes('--live');
-if (live) {
-  const result = dotenv.config({ path: '.env.live' });
+import { createDevelopmentConfig } from './dev-config.mjs';
+
+const mode = process.argv.includes('--fixtures') ? 'fixtures' : 'live';
+if (mode === 'live') {
+  const result = dotenv.config({ path: '.env.local' });
   if (result.error) {
-    throw new Error('Create .env.live from .env.live.example before running npm run dev:live');
+    throw new Error('Create .env.local from .env.local.example before running npm run dev');
   }
 }
 
-const defaults = {
-  NODE_ENV: 'development',
-  PORT: '3000',
-  DATABASE_URL: 'postgres://health_hub:health_hub_dev@127.0.0.1:54329/health_hub',
-  DASHBOARD_PASSWORD: '0000',
-  DASHBOARD_SESSION_SECRET: 'local-session-secret-change-before-production',
-  JOURNAL_ENCRYPTION_KEYS: `1:${crypto.createHash('sha256').update('health-hub-local-journal-key').digest('base64')}`,
-};
-const env = { ...process.env, ...Object.fromEntries(Object.entries(defaults).filter(([key]) => !process.env[key])) };
+const config = createDevelopmentConfig({ mode, sourceEnv: process.env });
 
-if (env.SKIP_LOCAL_DATABASE !== 'true') {
+if (config.env.SKIP_LOCAL_DATABASE !== 'true') {
   const docker = spawnSync(
     'docker',
-    ['compose', '-f', 'docker-compose.dev.yml', 'up', '-d', 'postgres'],
-    { stdio: 'inherit', shell: process.platform === 'win32' },
+    [
+      'compose', '-p', config.composeProjectName,
+      '-f', 'docker-compose.dev.yml', 'up', '-d', 'postgres',
+    ],
+    { env: config.env, stdio: 'inherit', shell: process.platform === 'win32' },
   );
   if (docker.status !== 0) {
     throw new Error('Could not start PostgreSQL. Start Docker Desktop, then retry npm run dev.');
@@ -35,7 +31,7 @@ if (env.SKIP_LOCAL_DATABASE !== 'true') {
 }
 
 async function waitForDatabase() {
-  const pool = new pg.Pool({ connectionString: env.DATABASE_URL });
+  const pool = new pg.Pool({ connectionString: config.env.DATABASE_URL });
   try {
     for (let attempt = 0; attempt < 30; attempt += 1) {
       try {
@@ -53,7 +49,7 @@ async function waitForDatabase() {
 
 function run(command, args) {
   const result = spawnSync(command, args, {
-    env,
+    env: config.env,
     stdio: 'inherit',
     shell: process.platform === 'win32',
   });
@@ -64,15 +60,15 @@ function run(command, args) {
 
 await waitForDatabase();
 run('node', ['scripts/migrate.mjs']);
-if (!live) run('node', ['scripts/seed.mjs']);
+if (config.seedFixtures) run('node', ['scripts/seed.mjs']);
 run('npm', ['run', 'build']);
 
 console.log(
-  live
-    ? 'Starting with the authenticated n8n gateway from .env.live'
+  mode === 'live'
+    ? 'Starting with the authenticated n8n gateway from .env.local (password: 0000)'
     : 'Starting local fixture mode at http://localhost:3000 (password: 0000)',
 );
-const child = spawn('node', ['server.js'], { env, stdio: 'inherit' });
+const child = spawn('node', ['server.js'], { env: config.env, stdio: 'inherit' });
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => child.kill(signal));
 }

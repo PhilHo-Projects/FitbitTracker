@@ -1,18 +1,47 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-test('local development and fixture preview use the documented 0000 password', async () => {
-  const [devScript, previewScript, readme] = await Promise.all([
-    readFile(new URL('../scripts/dev.mjs', import.meta.url), 'utf8'),
-    readFile(new URL('../scripts/preview-fixtures.mjs', import.meta.url), 'utf8'),
-    readFile(new URL('../README.md', import.meta.url), 'utf8'),
-  ]);
+import { createDevelopmentConfig } from '../scripts/dev-config.mjs';
 
-  assert.match(devScript, /DASHBOARD_PASSWORD: '0000'/);
-  assert.match(devScript, /password: 0000/);
-  assert.match(previewScript, /DASHBOARD_PASSWORD: '0000'/);
-  assert.match(previewScript, /password: 0000/);
-  assert.match(readme, /Local password: `0000`/);
-  assert.doesNotMatch(`${devScript}\n${previewScript}\n${readme}`, /health-local/);
+test('default development mode requires live gateway credentials and uses the live volume', () => {
+  const config = createDevelopmentConfig({
+    mode: 'live',
+    sourceEnv: {
+      N8N_WEBHOOK_URL: 'https://n8n.philippeho.dev/webhook/health-hub-sync',
+      N8N_WEBHOOK_TOKEN: 'test-token',
+    },
+  });
+
+  assert.equal(config.seedFixtures, false);
+  assert.equal(config.composeProjectName, 'health-hub-live');
+  assert.equal(config.postgresVolume, 'health-hub-postgres-live');
+  assert.equal(config.env.DASHBOARD_PASSWORD, '0000');
+  assert.equal(config.env.SYNC_SCHEDULE_ENABLED, 'false');
+});
+
+test('fixture mode has no n8n dependency and uses a different volume', () => {
+  const config = createDevelopmentConfig({ mode: 'fixtures', sourceEnv: {} });
+
+  assert.equal(config.seedFixtures, true);
+  assert.equal(config.composeProjectName, 'health-hub-fixtures');
+  assert.equal(config.postgresVolume, 'health-hub-postgres-fixtures');
+  assert.equal(config.env.N8N_WEBHOOK_URL, undefined);
+  assert.equal(config.env.N8N_WEBHOOK_TOKEN, undefined);
+});
+
+test('live mode rejects missing, placeholder, or legacy gateway configuration', () => {
+  assert.throws(
+    () => createDevelopmentConfig({ mode: 'live', sourceEnv: {} }),
+    /Create .env.local/,
+  );
+  assert.throws(
+    () => createDevelopmentConfig({
+      mode: 'live',
+      sourceEnv: {
+        N8N_WEBHOOK_URL: 'https://n8n.philippeho.dev/webhook/fitness-sync',
+        N8N_WEBHOOK_TOKEN: 'replace-me',
+      },
+    }),
+    /health-hub-sync/,
+  );
 });

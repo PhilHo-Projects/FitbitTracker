@@ -37,32 +37,34 @@ Requirements: Node.js 20+ and Docker Desktop.
 
 ```bash
 npm install
+# Create .env.local from .env.local.example and fill its n8n token.
 npm run dev
 ```
 
-`npm run dev`:
+`npm run dev` is the real-data, manual-sync mode. It reads `.env.local`, requires the authenticated
+n8n gateway at `https://n8n.philippeho.dev/webhook/health-hub-sync`, and:
 
 1. Starts PostgreSQL 16 on `127.0.0.1:54329`.
 2. Applies SQL migrations.
-3. Seeds deterministic sleep, heart-rate, and calorie fixtures.
+3. Does not seed fixtures.
 4. Builds Tailwind.
 5. Starts the application at `http://localhost:3000`.
 
 Local password: `0000`
 
-No Google, n8n, or production credentials are needed for fixture mode.
+Local development uses the existing remote n8n gateway; it does not install or run n8n locally.
+Automatic sync scheduling is disabled locally, so all syncs are started manually through the app.
 
-For the real n8n gateway:
+For deterministic offline fixtures with no n8n dependency:
 
 ```bash
-copy .env.live.example .env.live
-# Fill the gitignored file, then:
-npm run dev:live
+npm run dev:fixtures
 ```
 
-`dev:live` uses the local PostgreSQL service without seeding fixtures and reads the authenticated
-n8n URL/token from `.env.live`. Set `SKIP_LOCAL_DATABASE=true` only when `DATABASE_URL` points to a
-database managed separately.
+Both local modes use password `0000` and separate PostgreSQL volumes:
+`health-hub-postgres-live` for `npm run dev`, and `health-hub-postgres-fixtures` for
+`npm run dev:fixtures`. `npm run dev:live` remains an alias for `npm run dev`.
+Set `SKIP_LOCAL_DATABASE=true` only when `DATABASE_URL` points to a database managed separately.
 
 For a lightweight UI preview backed by in-memory deterministic fixtures:
 
@@ -210,7 +212,7 @@ See `.env.example`.
 | `DASHBOARD_PASSWORD` | Yes | Private dashboard password |
 | `DASHBOARD_SESSION_SECRET` | Yes | HMAC key for 12-hour sessions |
 | `JOURNAL_ENCRYPTION_KEYS` | Yes | Versioned AES-256-GCM keyring |
-| `N8N_WEBHOOK_URL` | For live sync | Secured `fitness-sync` gateway |
+| `N8N_WEBHOOK_URL` | For live sync | Secured `health-hub-sync` gateway |
 | `N8N_WEBHOOK_TOKEN` | For live sync | Header Auth token shared with n8n |
 | `EXPORT_STORAGE_DIR` | No | Private temporary export directory |
 | `PORT` | No | Express port; defaults to 3000 |
