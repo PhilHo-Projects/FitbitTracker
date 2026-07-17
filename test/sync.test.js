@@ -366,6 +366,62 @@ test('only one chunk per source account runs until it completes or requeues', as
   await pool.end();
 });
 
+test('a stale worker cannot finish or release a reclaimed chunk lease', async () => {
+  const pool = await createDatabase();
+  let clock = Date.now();
+  const repository = createSyncRepository(pool, {
+    advisoryLocks: false,
+    now: () => clock,
+  });
+  await repository.enqueue(
+    syncRequest([
+      {
+        metric: 'heart-rate',
+        operation: 'list',
+        startDate: '2026-07-03',
+        endDateExclusive: '2026-07-17',
+        pageToken: null,
+      },
+    ]),
+  );
+
+  const first = await repository.claimNextChunk('worker-a');
+  const claimedAt = (await pool.query('SELECT claimed_at FROM sync_chunks WHERE id = $1', [first.id]))
+    .rows[0].claimed_at;
+  clock = new Date(claimedAt).getTime() + 16 * 60 * 1000;
+  await repository.recoverStaleClaims();
+  const second = await repository.claimNextChunk('worker-b');
+
+  assert.equal(second.id, first.id);
+  assert.notEqual(second.claim_token, first.claim_token);
+  assert.equal(await repository.completeChunk(first, { nextPageToken: null }), false);
+  assert.deepEqual(await repository.failChunk(first, new Error('late failure')), {
+    retry: false,
+    stale: true,
+  });
+
+  const current = (
+    await pool.query('SELECT status, claimed_by, claim_token FROM sync_chunks WHERE id = $1', [first.id])
+  ).rows[0];
+  const accountClaim = (
+    await pool.query(
+      'SELECT sync_chunk_id, claim_token FROM sync_account_claims WHERE source_account_id = $1',
+      [first.source_account_id],
+    )
+  ).rows[0];
+  assert.deepEqual(current, {
+    status: 'running',
+    claimed_by: 'worker-b',
+    claim_token: second.claim_token,
+  });
+  assert.deepEqual(accountClaim, {
+    sync_chunk_id: second.id,
+    claim_token: second.claim_token,
+  });
+  assert.equal(await repository.completeChunk(second, { nextPageToken: null }), true);
+  await pool.end();
+});
+
 test('stale running chunks are requeued so a restarted worker resumes safely', async () => {
   const pool = await createDatabase();
   let clock = Date.now();
