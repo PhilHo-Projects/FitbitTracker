@@ -1,107 +1,224 @@
-# FitbitTracker
+# Personal Health Data Hub
 
-A private, sleep-first dashboard for Fitbit and Pixel Watch data. The browser talks to a small
-Express app, Express proxies an authenticated request to n8n, and n8n fetches the latest seven
-local sleep dates from the Google Health API.
+A private, single-user health archive for sleep, heart rate, calories, and dated journal context.
+The app stores exact source records in PostgreSQL, presents a phone-friendly daily view, and
+produces structured exports for later analysis by ChatGPT, NVIDIA, OpenAI, or another provider.
 
-Production: `https://fitbit.philippeho.dev`
+Production URL: `https://fitbit.philippeho.dev`
 
 ## Architecture
 
 ```text
 Browser
   → password-backed Express session
-  → POST /api/sleep
-  → Header-Auth n8n webhook
-  → Google Health identity + reconciled sleep endpoints
-  → normalized latest night, stages, seven-night history, naps, and averages
+  → PostgreSQL health archive
+  → resumable sync worker
+  → Header-Auth n8n gateway
+  → Google Health API
+
+PostgreSQL
+  → shared analysis dataset service
+  → AI-analysis ZIP / full archive ZIP / PNG summary
+  → future provider-neutral AI adapter
 ```
 
-- Google OAuth credentials remain in n8n.
-- The n8n shared token remains in n8n and the Express runtime environment.
-- The browser receives neither credential.
-- The app stores no sleep data; each refresh fetches live data.
+- PostgreSQL is the source of truth.
+- Express owns authentication, APIs, synchronization, journaling, summaries, and exports.
+- n8n stores Google OAuth and acts only as an allow-listed Google Health gateway.
+- Journal bodies and revisions use versioned AES-256-GCM encryption.
+- Health records and normalized summaries are retained indefinitely.
+- Completed export files remain private and expire after 24 hours.
+- Built-in AI calls are intentionally deferred; exports and future adapters share the same
+  normalized dataset contract.
 
 ## Local development
 
+Requirements: Node.js 20+ and Docker Desktop.
+
 ```bash
 npm install
-cp .env.example .env
 npm run dev
 ```
 
-Set all four security/integration variables in `.env`, then open
-`http://localhost:3000`. `npm run dev` rebuilds Tailwind before starting Express.
+`npm run dev`:
 
-For a separate development n8n workflow, point `N8N_WEBHOOK_URL` at an n8n test webhook. The
-application code is otherwise identical between environments.
+1. Starts PostgreSQL 16 on `127.0.0.1:54329`.
+2. Applies SQL migrations.
+3. Seeds deterministic sleep, heart-rate, and calorie fixtures.
+4. Builds Tailwind.
+5. Starts the application at `http://localhost:3000`.
 
-## Environment variables
+Local password: `0000`
+
+No Google, n8n, or production credentials are needed for fixture mode.
+
+For the real n8n gateway:
+
+```bash
+copy .env.live.example .env.live
+# Fill the gitignored file, then:
+npm run dev:live
+```
+
+`dev:live` uses the local PostgreSQL service without seeding fixtures and reads the authenticated
+n8n URL/token from `.env.live`. Set `SKIP_LOCAL_DATABASE=true` only when `DATABASE_URL` points to a
+database managed separately.
+
+For a lightweight UI preview backed by in-memory deterministic fixtures:
+
+```bash
+npm run preview
+```
+
+This starts `http://127.0.0.1:4173` with the same local password.
+
+## Product workspaces
+
+- **Today:** date browsing, one proportional sleep-stage bar, a four-column duration/percentage
+  row, resting/range/average heart values without a dashboard chart, calories burned, and latest
+  journal context.
+- **Sleep:** selected-day metrics and a chronological four-lane Awake/REM/Light/Deep timeline,
+  plus day/week/month/year trends and classic-sleep fallback.
+- **Heart:** resting, average, minimum, maximum, sample count, coverage, five-minute min/max
+  envelopes, and longer-range daily bands.
+- **Calories:** total expenditure, active and basal energy kept separate, hourly day detail, and
+  longer-range daily stacks.
+- **Journal:** multiple timestamped entries per day, reusable tags, encrypted revisions, edit, and
+  delete.
+- **Export:** AI-analysis ZIP, full raw-data ZIP, and purpose-built PNG summaries.
+
+## Data and synchronization
+
+The initial schema is in `db/migrations/001_initial.sql`. It stores:
+
+- Source accounts, timezone, profile, and Google Health membership start date.
+- Sleep sessions and chronological stages.
+- Raw heart-rate samples and daily summaries.
+- Total, active, and basal calorie intervals and daily summaries.
+- Joined daily health summaries with coverage and derivation flags.
+- Persistent sync jobs/chunks, retries, pagination, and restart recovery.
+- Encrypted journal entries, revisions, and searchable tags.
+- Background export jobs and expiry metadata.
+
+The worker synchronizes every three hours and supports manual recent, custom, and all-history jobs.
+Windows are newest-first and remain within Google Health limits:
+
+- 14 days: heart rate and total calories.
+- 90 days: sleep, daily resting heart rate, active energy, and basal energy.
+
+Every metric/window/page is checkpointed. Transient 429/5xx responses use bounded exponential
+backoff, stale claims are recovered after restart, and metrics can complete independently.
+
+The generated n8n workflow keeps:
+
+- Workflow ID: `fitbitTracker001`
+- Webhook path: `fitness-sync`
+- Header Auth credential: `FitbitTracker Webhook Auth`
+- Google credential ID/name: `zTvzoPpvTXOvI3rA` / `Google account`
+
+Build it with:
+
+```bash
+npm run build:workflow
+```
+
+Required Google OAuth scopes:
+
+```text
+https://www.googleapis.com/auth/googlehealth.sleep.readonly
+https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly
+https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly
+https://www.googleapis.com/auth/googlehealth.profile.readonly
+```
+
+After changing scopes, reconnect the n8n Google OAuth credential so its refresh token receives the
+new permissions.
+
+## API
+
+All product APIs require the signed dashboard session.
+
+```text
+GET  /api/dashboard?date=YYYY-MM-DD
+GET  /api/metrics/sleep?start=&end=
+GET  /api/metrics/heart?start=&end=&resolution=day|five-minute
+GET  /api/metrics/calories?start=&end=&resolution=day|hour
+
+GET  /api/journal?start=&end=
+POST /api/journal
+PUT  /api/journal/:id
+DELETE /api/journal/:id
+
+POST /api/sync
+GET  /api/sync/status
+
+POST /api/exports
+GET  /api/exports
+GET  /api/exports/:id
+GET  /api/exports/:id/download
+```
+
+Ranges are closed-open: `startDate` is inclusive and `endDateExclusive` is exclusive.
+
+Compatibility wrappers remain available during rollout:
+
+```text
+POST /api/sleep
+POST /api/fitness
+```
+
+Health endpoints:
+
+```text
+GET /healthz
+GET /readyz
+```
+
+## Exports
+
+AI-analysis ZIP contents:
+
+```text
+manifest.json
+daily-summary.csv
+sleep-sessions.csv
+sleep-stages.csv
+journal.md          # only when explicitly selected
+summary.png         # optional
+```
+
+Full archives additionally stream:
+
+```text
+heart-rate-samples.csv
+calorie-intervals.csv
+```
+
+The manifest records schema version, timezone, units, sources, range, column definitions,
+derivation flags, coverage warnings, and file inventory. Structured values remain primary; PNGs
+are fixed-layout companions generated from SVG, not screenshots of the browser viewport.
+
+## Runtime configuration
+
+See `.env.example`.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `PORT` | No | Express port; defaults to `3000` |
-| `DASHBOARD_PASSWORD` | Yes | Password accepted by `/api/login` |
-| `DASHBOARD_SESSION_SECRET` | Yes | HMAC key for 12-hour session cookies |
-| `N8N_WEBHOOK_URL` | Yes | Production or test `fitness-sync` webhook URL |
-| `N8N_WEBHOOK_TOKEN` | Yes | Value sent in the `x-fitness-token` header |
+| `DATABASE_URL` | Yes | PostgreSQL archive connection |
+| `DATABASE_POOL_SIZE` | No | Pool size; defaults to 10 |
+| `DATABASE_SSL` | No | Set `true` when the database requires TLS |
+| `DASHBOARD_PASSWORD` | Yes | Private dashboard password |
+| `DASHBOARD_SESSION_SECRET` | Yes | HMAC key for 12-hour sessions |
+| `JOURNAL_ENCRYPTION_KEYS` | Yes | Versioned AES-256-GCM keyring |
+| `N8N_WEBHOOK_URL` | For live sync | Secured `fitness-sync` gateway |
+| `N8N_WEBHOOK_TOKEN` | For live sync | Header Auth token shared with n8n |
+| `EXPORT_STORAGE_DIR` | No | Private temporary export directory |
+| `PORT` | No | Express port; defaults to 3000 |
 
-Use long, unrelated values for the dashboard password, session secret, and webhook token. The
-session cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` in production. Authenticated pages
-and health-data responses send `Cache-Control: no-store`.
-
-## Google Health and n8n setup
-
-The workflow ID remains `fitbitTracker001` and the production webhook remains
-`POST /webhook/fitness-sync`.
-
-1. Enable the Google Health API (`health.googleapis.com`) in the Google Cloud project used by
-   the n8n OAuth client.
-2. Add this scope to the OAuth consent screen and the dedicated n8n Google OAuth credential:
-
-   ```text
-   openid email profile https://www.googleapis.com/auth/googlehealth.sleep.readonly
-   ```
-
-3. Ensure this redirect URI is allowed on the Google OAuth client:
-
-   ```text
-   https://n8n.philippeho.dev/rest/oauth2-credential/callback
-   ```
-
-4. Reconnect the n8n credential after changing its scope. The old refresh token cannot gain the
-   new Google Health permission without a new browser consent.
-5. Create an n8n Header Auth credential named `FitbitTracker Webhook Auth`:
-
-   ```text
-   Header: x-fitness-token
-   Value:  same value as N8N_WEBHOOK_TOKEN
-   ```
-
-6. Build or import the workflow:
-
-   ```bash
-   npm run build:workflow
-   ```
-
-   Import `n8n/fitness-workflow.json`, assign both Google Health HTTP nodes to the dedicated
-   `Google account` credential, then publish the workflow.
-
-The `Prep` Code node calculates seven civil dates in `America/Toronto`. Change that zone in
-`scripts/build-n8n-workflow.mjs` if the dashboard owner moves permanently.
-
-## Google Health request
-
-The workflow calls:
-
-```text
-GET https://health.googleapis.com/v4/users/me/identity
-GET https://health.googleapis.com/v4/users/me/dataTypes/sleep/dataPoints:reconcile
-```
-
-The sleep request uses the `google-wearables` data-source family, a civil end-time range, and the
-maximum supported page size for sleep sessions. Staged sleep, classic sleep, duplicate records,
-naps, missing stages, and empty date ranges are normalized into one stable UI contract.
+Use unrelated secrets. In production, cookies are `HttpOnly`, `SameSite=Strict`, and `Secure`.
+Mutations validate browser origin, login attempts are throttled, health responses use
+`Cache-Control: no-store`, logs omit payloads/secrets, and restrictive CSP/permission headers are
+enabled.
 
 ## Verification
 
@@ -109,47 +226,50 @@ naps, missing stages, and empty date ranges are normalized into one stable UI co
 npm test
 npm run build
 npm run build:workflow
-docker build -t fitbit-tracker .
+docker build -t personal-health-data-hub .
 ```
 
-The tests cover session signing, protected routes, n8n proxy behavior, Google Health
-normalization, UI calculations, workflow structure, expressions, and Code-node syntax.
+The suite covers migrations, fixture replay, idempotent corrections, DST/civil dates,
+missing-versus-zero values, sparse coverage, job pagination/restart recovery, journal encryption
+and revisions, exports, API authorization, workflow structure, responsive layout regressions, and
+PNG layout.
+
+Browser QA uses the Playwright CLI against `npm run preview` at phone and desktop widths.
 
 ## Deployment
 
-The app is a Git-backed Coolify Dockerfile application under the `PhilHo-Projects` organization.
-The multi-stage image compiles Tailwind, installs production dependencies, and runs
-`node server.js` on port `3000`.
+The production Docker image:
 
-Required production runtime variables:
+1. Installs deterministic dependencies with `npm ci`.
+2. Builds Tailwind.
+3. Applies pending migrations before server startup.
+4. Exposes port 3000.
+5. Uses `/healthz` for the Docker health check and `/readyz` for migration/database readiness.
 
-```text
-DASHBOARD_PASSWORD
-DASHBOARD_SESSION_SECRET
-N8N_WEBHOOK_URL
-N8N_WEBHOOK_TOKEN
-```
+For Coolify:
 
-After deployment, verify:
-
-- `/healthz` returns HTTP 200.
-- `/` redirects unauthenticated visitors to `/login`.
-- A valid login sets the signed session cookie.
-- `/api/sleep` rejects calls without a session.
-- The dashboard renders a real seven-night Google Health response after OAuth consent.
+- Create a private PostgreSQL 16 resource.
+- Set the runtime variables from `.env.example`.
+- Keep the historical import disabled until a recent seven-day live sync is compared with Google
+  Health.
+- Configure private PostgreSQL backups to Cloudflare R2 with 30 daily and 12 monthly restore
+  points, then perform an actual restore test.
+- Keep the existing AWS deployment available until the new archive is verified.
 
 ## Project layout
 
 ```text
-server.js                    Express app, sessions, protected proxy
-lib/session.js               HMAC session tokens and cookie parsing
-lib/sleep-normalizer.js      Tested Google Health normalization contract
-public/                      Login and responsive sleep dashboard
-src/input.css                Tailwind entry and product styling
-n8n/fitness-workflow.json    Importable production workflow
-scripts/build-n8n-workflow.mjs
-                             Generates the workflow from the tested normalizer
-test/                        Node test runner coverage
-docs/superpowers/            Design and implementation plan
-Dockerfile                   Coolify production image
+db/migrations/              PostgreSQL schema
+lib/db/                     pools, migrations, fixtures, repositories, metric writer
+lib/metrics/                Google Health normalizers
+lib/jobs/                   gateway, planning, persistent sync worker
+lib/journal/                encryption and repository
+lib/exports/                dataset, CSV, ZIP, PNG, retention worker
+lib/routes/                 composed authenticated Express routers
+public/                     framework-free browser modules and HTML
+src/input.css               responsive product styling
+n8n/fitness-workflow.json   generated OAuth/API gateway
+scripts/                    dev, preview, migration, seed, workflow, production start
+test/                       Node test suite
+Dockerfile                  Coolify production image
 ```
