@@ -111,12 +111,16 @@ Windows are newest-first and remain within Google Health limits:
 Every metric/window/page is checkpointed. Transient 429/5xx responses use bounded exponential
 backoff, stale claims are recovered after restart, and metrics can complete independently.
 
-The generated n8n workflow keeps:
+The generated Personal Health Data Hub gateway uses:
 
-- Workflow ID: `fitbitTracker001`
-- Webhook path: `fitness-sync`
+- Artifact: `n8n/health-hub-workflow.json`
+- Workflow ID: `healthHubGateway001`
+- Webhook path: `health-hub-sync`
 - Header Auth credential: `FitbitTracker Webhook Auth`
 - Google credential ID/name: `zTvzoPpvTXOvI3rA` / `Google account`
+
+The legacy sleep workflow remains preserved at `n8n/fitness-workflow.json` with workflow ID
+`fitbitTracker001` and webhook path `fitness-sync`.
 
 Build it with:
 
@@ -270,7 +274,8 @@ lib/exports/                dataset, CSV, ZIP, PNG, retention worker
 lib/routes/                 composed authenticated Express routers
 public/                     framework-free browser modules and HTML
 src/input.css               responsive product styling
-n8n/fitness-workflow.json   generated OAuth/API gateway
+n8n/fitness-workflow.json   preserved legacy Google Health sleep workflow
+n8n/health-hub-workflow.json generated Personal Health Data Hub OAuth/API gateway
 scripts/                    dev, preview, migration, seed, workflow, production start
 test/                       Node test suite
 Dockerfile                  Coolify production image
