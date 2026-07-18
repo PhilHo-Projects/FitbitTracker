@@ -44,6 +44,11 @@ function dateOffset(date, days) {
   return value.toISOString().slice(0, 10);
 }
 
+function positiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export function createApp(options = {}) {
   const {
     env = process.env,
@@ -262,6 +267,7 @@ if (isDirectRun) {
             token: process.env.N8N_WEBHOOK_TOKEN,
           }),
           writer: createMetricWriter(pool),
+          rawRetentionDays: positiveNumber(process.env.RAW_RETENTION_DAYS, null),
         })
       : null;
   const exportService = pool
@@ -278,6 +284,9 @@ if (isDirectRun) {
   });
   syncService?.start({
     scheduleEnabled: process.env.SYNC_SCHEDULE_ENABLED !== 'false',
+    syncIntervalMs:
+      positiveNumber(process.env.SYNC_INTERVAL_HOURS, 3) * 60 * 60 * 1000,
+    scheduledLookbackDays: positiveNumber(process.env.SYNC_SCHEDULE_LOOKBACK_DAYS, 7),
   });
   exportService?.start();
   for (const signal of ['SIGINT', 'SIGTERM']) {

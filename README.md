@@ -229,6 +229,10 @@ See `.env.example`.
 | `JOURNAL_ENCRYPTION_KEYS` | Yes | Versioned AES-256-GCM keyring |
 | `N8N_WEBHOOK_URL` | For live sync | Secured `health-hub-sync` gateway |
 | `N8N_WEBHOOK_TOKEN` | For live sync | Header Auth token shared with n8n |
+| `SYNC_SCHEDULE_ENABLED` | No | Set `false` for manual-only sync; defaults to enabled |
+| `SYNC_INTERVAL_HOURS` | No | Scheduled sync interval; defaults to 3 hours |
+| `SYNC_SCHEDULE_LOOKBACK_DAYS` | No | Scheduled overlap window; defaults to 7 days |
+| `RAW_RETENTION_DAYS` | No | Retain raw heart/calorie rows for this many days; disabled when unset |
 | `EXPORT_STORAGE_DIR` | No | Private temporary export directory |
 | `PORT` | No | Express port; defaults to 3000 |
 
@@ -236,6 +240,12 @@ Use unrelated secrets. In production, cookies are `HttpOnly`, `SameSite=Strict`,
 Mutations validate browser origin, login attempts are throttled, health responses use
 `Cache-Control: no-store`, logs omit payloads/secrets, and restrictive CSP/permission headers are
 enabled.
+
+Production uses a 90-day raw-data window to bound disk usage. Raw heart-rate samples and calorie
+intervals are pruned only after an entire sync job succeeds; sleep, journals, and daily summaries
+remain permanent. Backfills keep full sleep and daily-resting-heart history while clamping raw
+metrics to the retained window. Local development leaves retention unset and never shares its
+PostgreSQL volume with production.
 
 ## Verification
 

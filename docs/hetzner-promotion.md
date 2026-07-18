@@ -17,16 +17,24 @@ Do not replace the working legacy container until the health hub has passed its 
 3. Attach the application to the PostgreSQL resource and configure:
    - `DATABASE_URL` using the Coolify internal PostgreSQL hostname.
    - `DATABASE_SSL=false` for the internal Docker network.
-   - `DATABASE_POOL_SIZE=10`.
+   - `DATABASE_POOL_SIZE=5`.
    - `JOURNAL_ENCRYPTION_KEYS` with a new versioned 32-byte AES key.
    - The existing production `DASHBOARD_PASSWORD` and `DASHBOARD_SESSION_SECRET`.
    - `N8N_WEBHOOK_URL=https://n8n.philippeho.dev/webhook/health-hub-sync`.
    - The matching health-hub header-auth token in `N8N_WEBHOOK_TOKEN`.
    - `SYNC_SCHEDULE_ENABLED=false` until the first bounded sync succeeds.
+   - `SYNC_INTERVAL_HOURS=6` and `SYNC_SCHEDULE_LOOKBACK_DAYS=2`.
+   - `RAW_RETENTION_DAYS=90` so raw heart/calorie storage stays bounded.
 4. Deploy to the temporary hostname. Startup must apply migrations and `GET /readyz` must return HTTP 200.
 5. Verify login, a one-day sleep-only sync, the Today dashboard, the Sleep workspace, journal encryption, and export creation.
-6. Enable scheduled sync only after the bounded checks pass.
-7. Point `fitbit.philippeho.dev` at the verified health-hub application. Keep the legacy application available for rollback until the new route is confirmed.
+6. Backfill historical sleep and daily resting heart rate only. Raw heart/calorie backfills are
+   automatically clamped to the 90-day retention window.
+7. Enable scheduled sync only after the bounded checks pass.
+8. Point `fitbit.philippeho.dev` at the verified health-hub application. Keep the legacy application available for rollback until the new route is confirmed.
+
+The production PostgreSQL volume lives on Hetzner and the development volume lives on the laptop.
+They use the same migrations but contain separate data. Git deploys application code and schema
+changes; it does not copy database contents between environments.
 
 The AWS legacy server, the legacy `fitness-sync` workflow, and the current production application remain intact throughout this promotion.
 
@@ -37,7 +45,8 @@ After the one-time PostgreSQL setup and cutover, ordinary changes use one path:
 1. Create a short feature branch from updated `main`.
 2. Run and test it with `npm run dev` against the laptop PostgreSQL volume.
 3. Push the branch and merge it to `main` after review.
-4. Let Coolify rebuild the Git-backed application from `main`.
-5. Verify `/readyz` and the changed UI or API behavior.
+4. Required GitHub CI runs tests, builds assets/workflow output, and builds the Docker image.
+5. A signed GitHub push webhook lets Coolify rebuild the Git-backed application from `main`.
+6. Verify `/readyz` and the changed UI or API behavior.
 
 Application code and schema migrations then move through Git. Development and production databases remain separate persistent data stores, as they should.

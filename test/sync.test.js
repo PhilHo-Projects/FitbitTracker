@@ -109,6 +109,42 @@ test('manual-only worker polls queued jobs without creating a scheduled sync int
   service.stop();
 });
 
+test('scheduled sync uses the configured interval and a bounded recent lookback', async () => {
+  const pool = await createDatabase();
+  const intervals = [];
+  const service = createSyncService({
+    pool,
+    repository: createSyncRepository(pool, { advisoryLocks: false }),
+    gateway: { request: async () => ({ ok: true, data: {} }) },
+    writer: createMetricWriter(pool),
+    now: () => Date.parse('2026-07-17T02:00:00.000Z'),
+    timers: {
+      setTimeout: () => 1,
+      clearTimeout: () => {},
+      setInterval: (callback, delay) => (intervals.push({ callback, delay }), intervals.length),
+      clearInterval: () => {},
+    },
+  });
+
+  service.start({
+    scheduleEnabled: true,
+    syncIntervalMs: 6 * 60 * 60 * 1000,
+    scheduledLookbackDays: 2,
+  });
+  intervals[0].callback();
+  let job;
+  for (let attempt = 0; attempt < 20 && !job; attempt += 1) {
+    await new Promise(setImmediate);
+    job = (await service.status()).active[0];
+  }
+
+  assert.equal(intervals[0].delay, 6 * 60 * 60 * 1000);
+  assert.equal(job.startDate, '2026-07-15');
+  assert.equal(job.endDateExclusive, '2026-07-17');
+  service.stop();
+  await pool.end();
+});
+
 test('sync planner respects metric limits and schedules recent windows first', () => {
   const heart = planMetricWindows({
     metric: 'heart-rate',
@@ -196,6 +232,69 @@ test('automatic sync ranges use the source civil date rather than UTC midnight',
 
   assert.equal(job.endDateExclusive, '2026-07-17');
   assert.equal(job.startDate, '2026-07-10');
+  await pool.end();
+});
+
+test('retained backfills keep full sleep history while clamping high-volume raw metrics', async () => {
+  const pool = await createDatabase();
+  const service = createSyncService({
+    pool,
+    repository: createSyncRepository(pool, { advisoryLocks: false }),
+    gateway: { request: async () => ({ ok: true, data: {} }) },
+    writer: createMetricWriter(pool),
+    rawRetentionDays: 90,
+    now: () => Date.parse('2026-07-17T16:00:00.000Z'),
+  });
+
+  await service.enqueue({
+    mode: 'backfill',
+    startDate: '2026-01-01',
+    endDateExclusive: '2026-07-18',
+    metrics: [
+      'sleep',
+      'heart-rate',
+      'daily-resting-heart-rate',
+      'active-energy-burned',
+      'basal-energy-burned',
+    ],
+  });
+
+  const chunks = (await pool.query('SELECT metric, start_date FROM sync_chunks')).rows;
+  const earliest = (metric) =>
+    chunks
+      .filter((chunk) => chunk.metric === metric)
+      .map((chunk) => new Date(chunk.start_date).toISOString().slice(0, 10))
+      .sort()[0];
+
+  assert.equal(earliest('sleep'), '2026-01-01');
+  assert.equal(earliest('daily-resting-heart-rate'), '2026-01-01');
+  assert.equal(earliest('heart-rate'), '2026-04-19');
+  assert.equal(earliest('active-energy-burned'), '2026-04-19');
+  assert.equal(earliest('basal-energy-burned'), '2026-04-19');
+  await pool.end();
+});
+
+test('retention rejects custom raw ranges older than the configured cutoff', async () => {
+  const pool = await createDatabase();
+  const service = createSyncService({
+    pool,
+    repository: createSyncRepository(pool, { advisoryLocks: false }),
+    gateway: { request: async () => ({ ok: true, data: {} }) },
+    writer: createMetricWriter(pool),
+    rawRetentionDays: 90,
+    now: () => Date.parse('2026-07-17T16:00:00.000Z'),
+  });
+
+  await assert.rejects(
+    () =>
+      service.enqueue({
+        mode: 'custom',
+        startDate: '2026-01-01',
+        endDateExclusive: '2026-01-02',
+        metrics: ['heart-rate'],
+      }),
+    (error) => error.status === 400 && /90-day raw retention/.test(error.message),
+  );
   await pool.end();
 });
 
@@ -614,6 +713,79 @@ test('sync worker ingests a chunk, recalculates its day, and completes the job',
   assert.equal(gatewayRequests[0].endDateExclusive, '2026-07-17');
   assert.equal(gatewayRequests[0].timezone, 'America/Toronto');
 
+  await pool.end();
+});
+
+test('successful sync jobs prune expired raw rows only after every chunk completes', async () => {
+  const pool = await createDatabase();
+  const repository = createSyncRepository(pool, { advisoryLocks: false });
+  const baseWriter = createMetricWriter(pool);
+  const prunes = [];
+  const writer = {
+    ...baseWriter,
+    async pruneRawMetricsBefore(sourceAccountId, cutoffDate) {
+      prunes.push({ sourceAccountId, cutoffDate });
+      return baseWriter.pruneRawMetricsBefore(sourceAccountId, cutoffDate);
+    },
+  };
+  const service = createSyncService({
+    pool,
+    repository,
+    writer,
+    gateway: {
+      request: async () => ({ ok: true, data: { dataPoints: [] }, nextPageToken: null }),
+    },
+    rawRetentionDays: 90,
+    now: () => Date.parse('2026-07-17T16:00:00.000Z'),
+  });
+
+  await service.enqueue({
+    mode: 'custom',
+    startDate: '2026-07-17',
+    endDateExclusive: '2026-07-18',
+    metrics: ['sleep', 'heart-rate'],
+  });
+  await service.runOnce();
+  assert.equal(prunes.length, 0);
+  await service.runOnce();
+  assert.deepEqual(prunes.map(({ cutoffDate }) => cutoffDate), ['2026-04-19']);
+  await pool.end();
+});
+
+test('failed sync jobs preserve raw rows for a later retry', async () => {
+  const pool = await createDatabase();
+  const repository = createSyncRepository(pool, { advisoryLocks: false });
+  const baseWriter = createMetricWriter(pool);
+  let pruneCalls = 0;
+  const service = createSyncService({
+    pool,
+    repository,
+    writer: {
+      ...baseWriter,
+      async pruneRawMetricsBefore(...args) {
+        pruneCalls += 1;
+        return baseWriter.pruneRawMetricsBefore(...args);
+      },
+    },
+    gateway: {
+      request: async () => {
+        throw Object.assign(new Error('permanent gateway failure'), { transient: false });
+      },
+    },
+    rawRetentionDays: 90,
+    now: () => Date.parse('2026-07-17T16:00:00.000Z'),
+  });
+
+  await service.enqueue({
+    mode: 'custom',
+    startDate: '2026-07-17',
+    endDateExclusive: '2026-07-18',
+    metrics: ['heart-rate'],
+  });
+  await service.runOnce();
+
+  assert.equal((await service.status()).recent[0].status, 'completed_with_errors');
+  assert.equal(pruneCalls, 0);
   await pool.end();
 });
 
