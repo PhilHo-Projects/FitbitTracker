@@ -13,7 +13,8 @@ test('production container applies migrations before starting and includes migra
   assert.equal(packageJson.scripts.start, 'node scripts/start.mjs');
   assert.match(dockerfile, /COPY --from=build \/app\/db \.\/db/);
   assert.match(dockerfile, /COPY --from=build \/app\/scripts \.\/scripts/);
-  assert.match(dockerfile, /HEALTHCHECK .*\/healthz/);
+  assert.match(dockerfile, /apt-get install -y --no-install-recommends curl/);
+  assert.match(dockerfile, /HEALTHCHECK .*\/readyz/);
   assert.match(dockerignore, /^\.runtime$/m);
   assert.match(dockerignore, /^output$/m);
   assert.match(server, /SYNC_INTERVAL_HOURS/);
