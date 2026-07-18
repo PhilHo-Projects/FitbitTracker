@@ -1,4 +1,7 @@
 node_modules
+.runtime
+output
+TIMELINE.md
 secrets
 .git
 .gitignore

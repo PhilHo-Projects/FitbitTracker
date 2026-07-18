@@ -1,86 +1,154 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { writeFile } from 'node:fs/promises';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const normalizerPath = path.join(root, 'lib', 'sleep-normalizer.js');
-const workflowPath = path.join(root, 'n8n', 'fitness-workflow.json');
+const workflowPath = new URL('../n8n/health-hub-workflow.json', import.meta.url);
 
-const normalizerSource = (await readFile(normalizerPath, 'utf8')).replace(
-  'export function normalizeSleepResponse',
-  'function normalizeSleepResponse',
-);
+const prepareCode = `const input = $input.first().json.body ?? {};
+const operations = ['profile', 'identity', 'list', 'reconcile', 'rollUp'];
+const metrics = [
+  'sleep',
+  'heart-rate',
+  'daily-resting-heart-rate',
+  'total-calories',
+  'active-energy-burned',
+  'basal-energy-burned',
+];
+const combinations = {
+  profile: ['sleep'],
+  identity: ['sleep'],
+  list: [
+    'heart-rate',
+    'daily-resting-heart-rate',
+    'active-energy-burned',
+    'basal-energy-burned',
+  ],
+  reconcile: ['sleep'],
+  rollUp: ['total-calories'],
+};
 
-const prepCode = `const endDate = DateTime.now().setZone('America/Toronto').startOf('day').plus({ days: 1 });
-const startDate = endDate.minus({ days: 7 });
+if (
+  !operations.includes(input.operation) ||
+  !metrics.includes(input.metric) ||
+  !combinations[input.operation]?.includes(input.metric)
+) {
+  throw new Error('Unsupported operation and metric combination');
+}
+
+const datePattern = /^\\d{4}-\\d{2}-\\d{2}$/;
+if (
+  !['profile', 'identity'].includes(input.operation) &&
+  (!datePattern.test(input.startDate) ||
+    !datePattern.test(input.endDateExclusive) ||
+    input.startDate >= input.endDateExclusive)
+) {
+  throw new Error('A valid closed-open date range is required');
+}
+if (input.operation === 'rollUp' && !String(input.timezone || '').trim()) {
+  throw new Error('A timezone is required for total-calories rollup');
+}
+
+const base = 'https://health.googleapis.com/v4/users/me';
+const snake = {
+  'heart-rate': 'heart_rate',
+  'daily-resting-heart-rate': 'daily_resting_heart_rate',
+  'active-energy-burned': 'active_energy_burned',
+  'basal-energy-burned': 'basal_energy_burned',
+};
+const filterField = {
+  sleep: 'sleep.interval.civil_end_time',
+  'heart-rate': 'heart_rate.sample_time.civil_time',
+  'daily-resting-heart-rate': 'daily_resting_heart_rate.date',
+  'active-energy-burned': 'active_energy_burned.interval.civil_start_time',
+  'basal-energy-burned': 'basal_energy_burned.interval.civil_start_time',
+};
+
+function requestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+let request;
+if (input.operation === 'profile' || input.operation === 'identity') {
+  request = {
+    method: 'GET',
+    url: \`\${base}/\${input.operation}\`,
+    body: null,
+  };
+} else if (input.operation === 'rollUp') {
+  const start = DateTime.fromISO(\`\${input.startDate}T00:00:00\`, { zone: input.timezone });
+  const end = DateTime.fromISO(\`\${input.endDateExclusive}T00:00:00\`, { zone: input.timezone });
+  const rangeSeconds = Math.round(end.toSeconds() - start.toSeconds());
+  if (!start.isValid || !end.isValid || rangeSeconds <= 0) {
+    throw new Error('Unable to build the total-calories rollup window');
+  }
+  request = {
+    method: 'POST',
+    url: \`\${base}/dataTypes/\${input.metric}/dataPoints:rollUp\`,
+    body: {
+      range: {
+        startTime: start.toUTC().toISO(),
+        endTime: end.toUTC().toISO(),
+      },
+      windowSize: '3600s',
+    },
+  };
+} else {
+  const suffix = input.operation === 'reconcile' ? 'dataPoints:reconcile' : 'dataPoints';
+  const query = {
+    pageSize: input.metric === 'sleep' ? '25' : '10000',
+    filter: \`\${filterField[input.metric]} >= "\${input.startDate}" AND \${filterField[input.metric]} < "\${input.endDateExclusive}"\`,
+  };
+  if (input.operation === 'reconcile') {
+    query.dataSourceFamily = 'users/me/dataSourceFamilies/google-wearables';
+  }
+  if (input.pageToken) query.pageToken = input.pageToken;
+  const queryString = Object.entries(query)
+    .map(([key, value]) => \`\${encodeURIComponent(key)}=\${encodeURIComponent(value)}\`)
+    .join('&');
+  request = {
+    method: 'GET',
+    url: \`\${base}/dataTypes/\${input.metric}/\${suffix}?\${queryString}\`,
+    body: null,
+  };
+}
 
 return [{
   json: {
-    days: 7,
-    timezone: 'America/Toronto',
-    startDate: startDate.toFormat('yyyy-MM-dd'),
-    endDateExclusive: endDate.toFormat('yyyy-MM-dd'),
-    requestedAt: new Date().toISOString(),
+    request,
+    context: {
+      operation: input.operation,
+      metric: input.metric,
+      startDate: input.startDate ?? null,
+      endDateExclusive: input.endDateExclusive ?? null,
+      pageToken: input.pageToken ?? null,
+      timezone: input.timezone ?? null,
+      requestId: requestId(),
+      filterName: snake[input.metric] ?? null,
+    },
   },
 }];`;
 
-const normalizeCode = `${normalizerSource}
-
-function extractError(body) {
-  if (body == null) return 'No response body';
-  if (typeof body === 'string') return body.slice(0, 400);
-  if (body.error?.message) return body.error.message;
-  if (body.error_description) return body.error_description;
-  if (typeof body.error === 'string') return body.error;
-  return JSON.stringify(body).slice(0, 400);
-}
-
-function pick(nodeName) {
-  try {
-    const response = $(nodeName).first().json;
-    const status = typeof response.statusCode === 'number' ? response.statusCode : null;
-    const body = response.body !== undefined ? response.body : response;
-    const ok = status !== null ? status >= 200 && status < 300 : !response.error;
-    return { ok, status, body };
-  } catch (error) {
-    return { ok: false, status: null, body: null, error: error.message };
-  }
-}
-
-const prep = $('Prep').first().json;
-const identityCall = pick('Google Health Identity');
-const sleepCall = pick('Google Health Sleep');
-const sleepBody = sleepCall.body && typeof sleepCall.body === 'object' ? sleepCall.body : {};
-const dataPoints = sleepCall.ok && Array.isArray(sleepBody.dataPoints) ? sleepBody.dataPoints : [];
-const normalized = normalizeSleepResponse({
-  dataPoints,
-  startDate: prep.startDate,
-  endDateExclusive: prep.endDateExclusive,
-  generatedAt: new Date().toISOString(),
-});
-const sleepError = sleepCall.ok ? null : extractError(sleepCall.body);
+const shapeCode = `const context = $('Validate and Prepare').first().json.context;
+const response = $input.first().json;
+const parsedStatus = Number(response.statusCode ?? response.status);
+const status = Number.isInteger(parsedStatus) && parsedStatus >= 100 && parsedStatus <= 599
+  ? parsedStatus
+  : 502;
+const body = response.body !== undefined ? response.body : response;
+const ok = status >= 200 && status < 300 && !body?.error;
 
 return [{
   json: {
-    ok: sleepCall.ok,
-    message: sleepCall.ok ? null : 'Google Health sleep fetch failed',
-    error: sleepError,
-    identity: identityCall.ok ? identityCall.body : null,
-    ...normalized,
-    sections: {
-      identity: {
-        ok: identityCall.ok,
-        status: identityCall.status,
-        error: identityCall.ok ? null : extractError(identityCall.body),
-      },
-      sleep: {
-        ok: sleepCall.ok,
-        status: sleepCall.status,
-        count: dataPoints.length,
-        partial: Boolean(sleepBody.nextPageToken),
-        error: sleepError,
-      },
-    },
+    ok,
+    metric: context.metric,
+    status,
+    data: ok ? body : null,
+    nextPageToken: ok ? (body?.nextPageToken ?? null) : null,
+    requestId: context.requestId,
+    message: ok ? null : (body?.error?.message ?? body?.message ?? 'Google Health request failed'),
   },
 }];`;
 
@@ -91,25 +159,14 @@ const googleCredential = {
   },
 };
 
-const fullResponseOptions = {
-  response: {
-    response: {
-      fullResponse: true,
-      neverError: true,
-      responseFormat: 'json',
-    },
-  },
-  timeout: 30_000,
-};
-
 const workflow = {
-  id: 'fitbitTracker001',
-  name: 'FitbitTracker — Google Health sleep',
+  id: 'healthHubGateway001',
+  name: 'Personal Health Data Hub — Google Health gateway',
   nodes: [
     {
       parameters: {
         httpMethod: 'POST',
-        path: 'fitness-sync',
+        path: 'health-hub-sync',
         authentication: 'headerAuth',
         responseMode: 'responseNode',
         options: {},
@@ -119,7 +176,7 @@ const workflow = {
       type: 'n8n-nodes-base.webhook',
       typeVersion: 2,
       position: [0, 300],
-      webhookId: 'fitness-sync-webhook',
+      webhookId: 'health-hub-sync-webhook',
       credentials: {
         httpHeaderAuth: {
           id: 'fitbitTrackerWebhookAuth',
@@ -129,74 +186,53 @@ const workflow = {
     },
     {
       parameters: {
-        jsCode: prepCode,
+        jsCode: prepareCode,
       },
-      id: 'node-prep',
-      name: 'Prep',
+      id: 'node-validate-prepare',
+      name: 'Validate and Prepare',
       type: 'n8n-nodes-base.code',
       typeVersion: 2,
-      position: [240, 300],
+      position: [280, 300],
     },
     {
       parameters: {
-        url: 'https://health.googleapis.com/v4/users/me/identity',
+        method: '={{ $json.request.method }}',
+        url: '={{ $json.request.url }}',
         authentication: 'predefinedCredentialType',
         nodeCredentialType: 'googleOAuth2Api',
-        options: fullResponseOptions,
-      },
-      id: 'node-health-identity',
-      name: 'Google Health Identity',
-      type: 'n8n-nodes-base.httpRequest',
-      typeVersion: 4.2,
-      position: [480, 300],
-      credentials: googleCredential,
-      onError: 'continueRegularOutput',
-      alwaysOutputData: true,
-    },
-    {
-      parameters: {
-        url: 'https://health.googleapis.com/v4/users/me/dataTypes/sleep/dataPoints:reconcile',
-        authentication: 'predefinedCredentialType',
-        nodeCredentialType: 'googleOAuth2Api',
-        sendQuery: true,
-        specifyQuery: 'keypair',
-        queryParameters: {
-          parameters: [
-            {
-              name: 'dataSourceFamily',
-              value: 'users/me/dataSourceFamilies/google-wearables',
+        sendBody: '={{ $json.request.method === "POST" }}',
+        contentType: 'raw',
+        rawContentType: 'application/json',
+        body: '={{ JSON.stringify($json.request.body || {}) }}',
+        options: {
+          response: {
+            response: {
+              fullResponse: true,
+              neverError: true,
+              responseFormat: 'json',
             },
-            {
-              name: 'pageSize',
-              value: '25',
-            },
-            {
-              name: 'filter',
-              value:
-                '={{ \'sleep.interval.civil_end_time >= "\' + $(\'Prep\').first().json.startDate + \'" AND sleep.interval.civil_end_time < "\' + $(\'Prep\').first().json.endDateExclusive + \'"\' }}',
-            },
-          ],
+          },
+          timeout: 30_000,
         },
-        options: fullResponseOptions,
       },
-      id: 'node-health-sleep',
-      name: 'Google Health Sleep',
+      id: 'node-google-health-api',
+      name: 'Google Health API',
       type: 'n8n-nodes-base.httpRequest',
       typeVersion: 4.2,
-      position: [720, 300],
+      position: [570, 300],
       credentials: googleCredential,
       onError: 'continueRegularOutput',
       alwaysOutputData: true,
     },
     {
       parameters: {
-        jsCode: normalizeCode,
+        jsCode: shapeCode,
       },
-      id: 'node-normalize-sleep',
-      name: 'Normalize Sleep',
+      id: 'node-shape-response',
+      name: 'Shape Response',
       type: 'n8n-nodes-base.code',
       typeVersion: 2,
-      position: [960, 300],
+      position: [860, 300],
     },
     {
       parameters: {
@@ -204,10 +240,8 @@ const workflow = {
         options: {
           responseHeaders: {
             entries: [
-              {
-                name: 'Cache-Control',
-                value: 'no-store',
-              },
+              { name: 'Cache-Control', value: 'no-store' },
+              { name: 'Content-Type', value: 'application/json' },
             ],
           },
         },
@@ -216,29 +250,28 @@ const workflow = {
       name: 'Respond',
       type: 'n8n-nodes-base.respondToWebhook',
       typeVersion: 1.1,
-      position: [1200, 300],
+      position: [1140, 300],
     },
   ],
   connections: {
     Webhook: {
-      main: [[{ node: 'Prep', type: 'main', index: 0 }]],
+      main: [[{ node: 'Validate and Prepare', type: 'main', index: 0 }]],
     },
-    Prep: {
-      main: [[{ node: 'Google Health Identity', type: 'main', index: 0 }]],
+    'Validate and Prepare': {
+      main: [[{ node: 'Google Health API', type: 'main', index: 0 }]],
     },
-    'Google Health Identity': {
-      main: [[{ node: 'Google Health Sleep', type: 'main', index: 0 }]],
+    'Google Health API': {
+      main: [[{ node: 'Shape Response', type: 'main', index: 0 }]],
     },
-    'Google Health Sleep': {
-      main: [[{ node: 'Normalize Sleep', type: 'main', index: 0 }]],
-    },
-    'Normalize Sleep': {
+    'Shape Response': {
       main: [[{ node: 'Respond', type: 'main', index: 0 }]],
     },
   },
   active: true,
   settings: {
     executionOrder: 'v1',
+    saveDataErrorExecution: 'all',
+    saveDataSuccessExecution: 'none',
   },
   pinData: {},
   tags: [],

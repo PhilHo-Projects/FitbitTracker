@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: health_hub
+      POSTGRES_USER: health_hub
+      POSTGRES_PASSWORD: health_hub_dev
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U health_hub -d health_hub"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - health-hub-postgres:/var/lib/postgresql/data
+
+volumes:
+  health-hub-postgres:
+    name: ${HEALTH_HUB_POSTGRES_VOLUME:?HEALTH_HUB_POSTGRES_VOLUME is required}

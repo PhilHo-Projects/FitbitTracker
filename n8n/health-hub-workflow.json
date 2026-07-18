@@ -1,0 +1,175 @@
+{
+  "id": "healthHubGateway001",
+  "name": "Personal Health Data Hub — Google Health gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "health-hub-sync",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "health-hub-sync-webhook",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "fitbitTrackerWebhookAuth",
+          "name": "FitbitTracker Webhook Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json.body ?? {};\nconst operations = ['profile', 'identity', 'list', 'reconcile', 'rollUp'];\nconst metrics = [\n  'sleep',\n  'heart-rate',\n  'daily-resting-heart-rate',\n  'total-calories',\n  'active-energy-burned',\n  'basal-energy-burned',\n];\nconst combinations = {\n  profile: ['sleep'],\n  identity: ['sleep'],\n  list: [\n    'heart-rate',\n    'daily-resting-heart-rate',\n    'active-energy-burned',\n    'basal-energy-burned',\n  ],\n  reconcile: ['sleep'],\n  rollUp: ['total-calories'],\n};\n\nif (\n  !operations.includes(input.operation) ||\n  !metrics.includes(input.metric) ||\n  !combinations[input.operation]?.includes(input.metric)\n) {\n  throw new Error('Unsupported operation and metric combination');\n}\n\nconst datePattern = /^\\d{4}-\\d{2}-\\d{2}$/;\nif (\n  !['profile', 'identity'].includes(input.operation) &&\n  (!datePattern.test(input.startDate) ||\n    !datePattern.test(input.endDateExclusive) ||\n    input.startDate >= input.endDateExclusive)\n) {\n  throw new Error('A valid closed-open date range is required');\n}\nif (input.operation === 'rollUp' && !String(input.timezone || '').trim()) {\n  throw new Error('A timezone is required for total-calories rollup');\n}\n\nconst base = 'https://health.googleapis.com/v4/users/me';\nconst snake = {\n  'heart-rate': 'heart_rate',\n  'daily-resting-heart-rate': 'daily_resting_heart_rate',\n  'active-energy-burned': 'active_energy_burned',\n  'basal-energy-burned': 'basal_energy_burned',\n};\nconst filterField = {\n  sleep: 'sleep.interval.civil_end_time',\n  'heart-rate': 'heart_rate.sample_time.civil_time',\n  'daily-resting-heart-rate': 'daily_resting_heart_rate.date',\n  'active-energy-burned': 'active_energy_burned.interval.civil_start_time',\n  'basal-energy-burned': 'basal_energy_burned.interval.civil_start_time',\n};\n\nfunction requestId() {\n  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {\n    const random = Math.floor(Math.random() * 16);\n    const value = character === 'x' ? random : (random & 0x3) | 0x8;\n    return value.toString(16);\n  });\n}\n\nlet request;\nif (input.operation === 'profile' || input.operation === 'identity') {\n  request = {\n    method: 'GET',\n    url: `${base}/${input.operation}`,\n    body: null,\n  };\n} else if (input.operation === 'rollUp') {\n  const start = DateTime.fromISO(`${input.startDate}T00:00:00`, { zone: input.timezone });\n  const end = DateTime.fromISO(`${input.endDateExclusive}T00:00:00`, { zone: input.timezone });\n  const rangeSeconds = Math.round(end.toSeconds() - start.toSeconds());\n  if (!start.isValid || !end.isValid || rangeSeconds <= 0) {\n    throw new Error('Unable to build the total-calories rollup window');\n  }\n  request = {\n    method: 'POST',\n    url: `${base}/dataTypes/${input.metric}/dataPoints:rollUp`,\n    body: {\n      range: {\n        startTime: start.toUTC().toISO(),\n        endTime: end.toUTC().toISO(),\n      },\n      windowSize: '3600s',\n    },\n  };\n} else {\n  const suffix = input.operation === 'reconcile' ? 'dataPoints:reconcile' : 'dataPoints';\n  const query = {\n    pageSize: input.metric === 'sleep' ? '25' : '10000',\n    filter: `${filterField[input.metric]} >= \"${input.startDate}\" AND ${filterField[input.metric]} < \"${input.endDateExclusive}\"`,\n  };\n  if (input.operation === 'reconcile') {\n    query.dataSourceFamily = 'users/me/dataSourceFamilies/google-wearables';\n  }\n  if (input.pageToken) query.pageToken = input.pageToken;\n  const queryString = Object.entries(query)\n    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)\n    .join('&');\n  request = {\n    method: 'GET',\n    url: `${base}/dataTypes/${input.metric}/${suffix}?${queryString}`,\n    body: null,\n  };\n}\n\nreturn [{\n  json: {\n    request,\n    context: {\n      operation: input.operation,\n      metric: input.metric,\n      startDate: input.startDate ?? null,\n      endDateExclusive: input.endDateExclusive ?? null,\n      pageToken: input.pageToken ?? null,\n      timezone: input.timezone ?? null,\n      requestId: requestId(),\n      filterName: snake[input.metric] ?? null,\n    },\n  },\n}];"
+      },
+      "id": "node-validate-prepare",
+      "name": "Validate and Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.request.method }}",
+        "url": "={{ $json.request.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": "={{ $json.request.method === \"POST\" }}",
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.request.body || {}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "node-google-health-api",
+      "name": "Google Health API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        570,
+        300
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "zTvzoPpvTXOvI3rA",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Validate and Prepare').first().json.context;\nconst response = $input.first().json;\nconst parsedStatus = Number(response.statusCode ?? response.status);\nconst status = Number.isInteger(parsedStatus) && parsedStatus >= 100 && parsedStatus <= 599\n  ? parsedStatus\n  : 502;\nconst body = response.body !== undefined ? response.body : response;\nconst ok = status >= 200 && status < 300 && !body?.error;\n\nreturn [{\n  json: {\n    ok,\n    metric: context.metric,\n    status,\n    data: ok ? body : null,\n    nextPageToken: ok ? (body?.nextPageToken ?? null) : null,\n    requestId: context.requestId,\n    message: ok ? null : (body?.error?.message ?? body?.message ?? 'Google Health request failed'),\n  },\n}];"
+      },
+      "id": "node-shape-response",
+      "name": "Shape Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "node-respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate and Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and Prepare": {
+      "main": [
+        [
+          {
+            "node": "Google Health API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Health API": {
+      "main": [
+        [
+          {
+            "node": "Shape Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  },
+  "pinData": {},
+  "tags": []
+}

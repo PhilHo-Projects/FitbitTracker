@@ -5,226 +5,264 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0b0e14" />
-    <title>FitbitTracker — Sleep dashboard</title>
+    <title>Personal Health Data Hub</title>
     <link rel="stylesheet" href="/styles.css" />
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23b9dc8c' d='M20.7 15.2A8.5 8.5 0 0 1 8.8 3.3 9 9 0 1 0 20.7 15.2Z'/></svg>"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23b9dc8c' d='M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z'/></svg>"
     />
   </head>
   <body class="app-body">
-    <div class="dashboard-shell">
-      <header class="topbar">
-        <a class="brand" href="/" aria-label="FitbitTracker sleep dashboard">
+    <div id="environmentBanner" class="environment-banner" role="status" hidden>
+      LOCAL DEVELOPMENT
+    </div>
+    <header class="app-header">
+      <div class="header-inner">
+        <a class="brand" href="/" data-nav="today" aria-label="Open Today">
           <span class="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none">
-              <path
-                d="M20.4 15.2A8.2 8.2 0 0 1 8.8 3.6a8.7 8.7 0 1 0 11.6 11.6Z"
-                fill="currentColor"
-              />
+              <path d="M12 20.5S4.5 16 4.5 10.2A4.2 4.2 0 0 1 12 7.6a4.2 4.2 0 0 1 7.5 2.6C19.5 16 12 20.5 12 20.5Z" fill="currentColor"/>
+              <path d="m7.8 12.2 2.1-2 2.1 3.7 2-4.1 2.2 2.4h2.1" stroke="#18220e" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </span>
           <span>
-            <strong>FitbitTracker</strong>
-            <small>Google Health sleep</small>
+            <strong>Health Hub</strong>
+            <small>Private archive</small>
           </span>
         </a>
 
-        <div class="topbar-actions">
-          <div id="connectionStatus" class="status-pill" data-state="idle">
-            <span class="status-dot" aria-hidden="true"></span>
-            <span id="connectionStatusText">Waiting to sync</span>
-          </div>
-          <button id="refreshButton" class="primary-button" type="button">
-            <span id="refreshSpinner" class="button-spinner" hidden aria-hidden="true"></span>
-            <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <span id="refreshLabel">Refresh sleep</span>
-          </button>
-          <button id="logoutButton" class="quiet-button" type="button">Sign out</button>
-        </div>
-      </header>
+        <nav class="main-nav" aria-label="Health workspaces">
+          <button class="nav-item is-active" type="button" data-nav="today">Today</button>
+          <button class="nav-item" type="button" data-nav="sleep">Sleep</button>
+          <button class="nav-item" type="button" data-nav="heart">Heart</button>
+          <button class="nav-item" type="button" data-nav="calories">Calories</button>
+          <button class="nav-item" type="button" data-nav="journal">Journal</button>
+          <button class="nav-item" type="button" data-nav="export">Export</button>
+        </nav>
 
-      <main>
-        <div id="notice" class="notice" role="alert" hidden></div>
-
-        <section id="loadingState" class="loading-grid" aria-label="Loading sleep data">
-          <div class="panel skeleton-panel skeleton-large">
-            <span class="skeleton-line skeleton-line-short"></span>
-            <span class="skeleton-line skeleton-line-title"></span>
-            <span class="skeleton-line skeleton-line-medium"></span>
-            <span class="skeleton-block"></span>
-          </div>
-          <div class="metric-grid">
-            <div class="metric-card skeleton-panel"></div>
-            <div class="metric-card skeleton-panel"></div>
-            <div class="metric-card skeleton-panel"></div>
-            <div class="metric-card skeleton-panel"></div>
-          </div>
-        </section>
-
-        <section id="emptyState" class="panel empty-state" hidden>
-          <span class="empty-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path
-                d="M20 15.2A8.3 8.3 0 0 1 8.8 4a8.8 8.8 0 1 0 11.2 11.2Z"
-                stroke="currentColor"
-                stroke-width="1.6"
-              />
-            </svg>
+        <div class="header-actions">
+          <span id="syncStatus" class="sync-status" data-state="idle">
+            <i aria-hidden="true"></i>
+            <span>Local archive</span>
           </span>
-          <p class="eyebrow">No records yet</p>
-          <h1>No sleep appeared in this seven-day window.</h1>
-          <p>
-            This is a valid Google Health response. Try refreshing after Fitbit has finished
-            processing last night, or inspect the diagnostics below.
-          </p>
-          <button id="emptyRefreshButton" class="primary-button" type="button">Try again</button>
-        </section>
+          <button id="syncButton" class="button button-primary button-compact" type="button">Sync now</button>
+          <button id="logoutButton" class="icon-button" type="button" aria-label="Sign out" title="Sign out">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10M14.5 8l4 4-4 4M18.5 12H9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
 
-        <div id="dashboardContent" hidden>
-          <div class="dashboard-grid">
-            <section class="panel latest-panel" aria-labelledby="latestHeading">
-              <div class="section-heading">
-                <div>
-                  <p class="eyebrow">Latest night</p>
-                  <h1 id="latestHeading">Sleep overview</h1>
-                </div>
-                <span id="latestDate" class="date-chip">—</span>
-              </div>
+    <main class="app-main">
+      <div id="notice" class="notice" role="alert" hidden></div>
 
-              <div class="latest-summary">
-                <div>
-                  <span id="latestDuration" class="hero-value">—</span>
-                  <span class="hero-label">sleep period</span>
-                </div>
-                <dl class="time-pair">
-                  <div>
-                    <dt>Bedtime</dt>
-                    <dd id="bedtimeValue">—</dd>
-                  </div>
-                  <div>
-                    <dt>Wake time</dt>
-                    <dd id="wakeValue">—</dd>
-                  </div>
-                </dl>
-              </div>
-
-              <div class="timeline-heading">
-                <div>
-                  <h2>Sleep stages</h2>
-                  <p id="stageCaption">Measured across the sleep period</p>
-                </div>
-                <span id="sleepTypeBadge" class="type-badge">—</span>
-              </div>
-              <div
-                id="stageTimeline"
-                class="sleep-timeline"
-                role="img"
-                aria-label="Sleep stage timeline"
-              ></div>
-              <div id="stageLegend" class="stage-legend"></div>
-            </section>
-
-            <aside class="metric-grid" aria-label="Seven-night summary">
-              <article class="metric-card">
-                <span class="metric-label">Average sleep</span>
-                <strong id="averageDuration" class="metric-value">—</strong>
-                <span class="metric-note">per recorded night</span>
-              </article>
-              <article class="metric-card">
-                <span class="metric-label">Average asleep</span>
-                <strong id="averageAsleep" class="metric-value">—</strong>
-                <span class="metric-note">excluding awake time</span>
-              </article>
-              <article class="metric-card">
-                <span class="metric-label">Efficiency</span>
-                <strong id="averageEfficiency" class="metric-value">—</strong>
-                <span class="metric-note">asleep ÷ sleep period</span>
-              </article>
-              <article class="metric-card">
-                <span class="metric-label">Nights found</span>
-                <strong id="nightsCount" class="metric-value">—</strong>
-                <span id="rangeLabel" class="metric-note">latest seven dates</span>
-              </article>
-            </aside>
+      <section id="view-today" class="app-view" data-view="today">
+        <div class="view-heading">
+          <div>
+            <p class="view-kicker">Daily record</p>
+            <h1 id="todayHeading">Today</h1>
+            <p id="todaySubheading">What happened across sleep, heart, calories, and context.</p>
           </div>
-
-          <section class="panel trend-panel" aria-labelledby="trendHeading">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Seven-night trend</p>
-                <h2 id="trendHeading">Sleep period by night</h2>
-              </div>
-              <span id="trendAverage" class="subtle-stat">Average —</span>
-            </div>
-            <div id="weekChart" class="week-chart" aria-label="Sleep duration chart"></div>
-          </section>
-
-          <section class="panel history-panel" aria-labelledby="historyHeading">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Nightly detail</p>
-                <h2 id="historyHeading">Recent sleep</h2>
-              </div>
-              <span class="subtle-stat">Newest first</span>
-            </div>
-            <div class="history-header" aria-hidden="true">
-              <span>Night</span>
-              <span>Period</span>
-              <span>Asleep</span>
-              <span>Efficiency</span>
-              <span>Stages</span>
-            </div>
-            <div id="nightHistory" class="history-list"></div>
-          </section>
-
-          <section id="napsPanel" class="panel history-panel" aria-labelledby="napsHeading" hidden>
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Daytime sleep</p>
-                <h2 id="napsHeading">Naps</h2>
-              </div>
-              <span id="napsCount" class="subtle-stat"></span>
-            </div>
-            <div id="napHistory" class="nap-list"></div>
-          </section>
+          <div class="date-browser" aria-label="Browse dates">
+            <button id="previousDate" class="icon-button" type="button" aria-label="Previous day">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14 7-5 5 5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <label class="date-field">
+              <span class="sr-only">Selected date</span>
+              <input id="datePicker" type="date" />
+            </label>
+            <button id="nextDate" class="icon-button" type="button" aria-label="Next day">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m10 7 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button id="todayButton" class="button button-secondary button-compact" type="button">Today</button>
+          </div>
         </div>
 
-        <details id="diagnosticsPanel" class="panel diagnostics-panel">
-          <summary>
-            <span>
-              <strong>Diagnostics</strong>
-              <small id="syncMeta">No sync completed</small>
-            </span>
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="m8 10 4 4 4-4"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </summary>
-          <pre id="rawResponse">The n8n response will appear here after the first sync.</pre>
-        </details>
-      </main>
+        <div id="todayLoading" class="dashboard-loading" aria-label="Loading health data">
+          <div class="skeleton skeleton-large"></div>
+          <div class="skeleton-stack">
+            <div class="skeleton"></div>
+            <div class="skeleton"></div>
+          </div>
+        </div>
 
-      <footer class="footer">
-        <span>Live data from Google Health through n8n</span>
-        <span aria-hidden="true">·</span>
-        <span>No sleep data is stored by this dashboard</span>
-      </footer>
-    </div>
+        <div id="todayContent" class="today-layout" hidden>
+          <section class="metric-panel sleep-summary interactive-panel" data-open-view="sleep" tabindex="0" aria-labelledby="sleepMetricLabel sleepSummaryHeading">
+            <div class="panel-heading sleep-panel-heading">
+              <dl class="sleep-heading-metrics">
+                <div><dt id="sleepMetricLabel">Sleep</dt><dd id="sleepSummaryHeading"><span id="sleepDuration">—</span></dd></div>
+                <div><dt>Asleep</dt><dd id="sleepAsleep">—</dd></div>
+                <div><dt>Efficiency</dt><dd id="sleepEfficiency">—</dd></div>
+              </dl>
+              <div class="sleep-heading-meta">
+                <span class="open-indicator" aria-hidden="true">View detail →</span>
+                <p id="sleepWindow">No sleep session stored for this date.</p>
+              </div>
+            </div>
+            <div id="todaySleepEmpty" class="metric-empty" hidden>Sync this date to add its sleep record.</div>
+            <div id="todaySleepData">
+              <div id="todaySleepBar" class="stage-bar" role="img" aria-label="Sleep stage proportions"></div>
+              <div id="todayStageRow" class="stage-row" aria-label="Sleep stage durations and percentages"></div>
+            </div>
+          </section>
 
+          <section class="metric-panel compact-panel interactive-panel" data-open-view="heart" tabindex="0" aria-labelledby="heartSummaryHeading">
+            <div class="panel-heading">
+              <div>
+                <span class="metric-name">Heart</span>
+                <h2 id="heartSummaryHeading"><span id="heartResting">—</span> <small>bpm resting</small></h2>
+              </div>
+              <span class="open-indicator" aria-hidden="true">Detail →</span>
+            </div>
+            <div id="heartSummaryData" class="summary-facts">
+              <div><span>Daily range</span><strong id="heartRange">—</strong></div>
+              <div><span>Average</span><strong id="heartAverage">—</strong></div>
+              <div><span>Readings</span><strong id="heartSamples">—</strong></div>
+            </div>
+            <p id="heartMissing" class="metric-empty" hidden>No heart readings stored for this date.</p>
+          </section>
+
+          <section class="metric-panel compact-panel interactive-panel" data-open-view="calories" tabindex="0" aria-labelledby="calorieSummaryHeading">
+            <div class="panel-heading">
+              <div>
+                <span class="metric-name">Calories burned</span>
+                <h2 id="calorieSummaryHeading"><span id="calorieTotal">—</span> <small>kcal total</small></h2>
+              </div>
+              <span class="open-indicator" aria-hidden="true">Detail →</span>
+            </div>
+            <div id="calorieSummaryData" class="summary-facts">
+              <div><span>Active</span><strong id="calorieActive">—</strong></div>
+              <div><span>Basal</span><strong id="calorieBasal">—</strong></div>
+              <div><span>Coverage</span><strong id="calorieCoverage">—</strong></div>
+            </div>
+            <p id="calorieMissing" class="metric-empty" hidden>No calorie expenditure stored for this date.</p>
+          </section>
+
+          <section class="context-panel" aria-labelledby="contextHeading">
+            <div>
+              <span class="metric-name">Context</span>
+              <h2 id="contextHeading">What else mattered?</h2>
+              <div id="latestContext" class="context-copy">
+                <p>No journal entry yet. Add exercise, substances, illness, stress, travel, meals, or anything else that gives the numbers meaning.</p>
+              </div>
+            </div>
+            <button id="addContextButton" class="button button-primary" type="button">Add context</button>
+          </section>
+        </div>
+      </section>
+
+      <section id="view-sleep" class="app-view" data-view="sleep" hidden>
+        <div class="workspace-heading">
+          <div><p class="view-kicker">Sleep workspace</p><h1>Sleep</h1></div>
+        </div>
+        <div id="sleepWorkspace" class="workspace-content"></div>
+      </section>
+
+      <section id="view-heart" class="app-view" data-view="heart" hidden>
+        <div class="workspace-heading">
+          <div><p class="view-kicker">Heart workspace</p><h1>Heart rate</h1><p>Resting, range, average, and coverage without misleading interpolation.</p></div>
+          <div class="range-tabs" data-range-tabs="heart">
+            <button type="button" data-range="day" class="is-active">Day</button>
+            <button type="button" data-range="week">Week</button>
+            <button type="button" data-range="month">Month</button>
+            <button type="button" data-range="year">Year</button>
+          </div>
+        </div>
+        <div id="heartWorkspace" class="workspace-content"></div>
+      </section>
+
+      <section id="view-calories" class="app-view" data-view="calories" hidden>
+        <div class="workspace-heading">
+          <div><p class="view-kicker">Calories workspace</p><h1>Energy expenditure</h1><p>Total burned stays separate from consumed calories.</p></div>
+          <div class="range-tabs" data-range-tabs="calories">
+            <button type="button" data-range="day" class="is-active">Day</button>
+            <button type="button" data-range="week">Week</button>
+            <button type="button" data-range="month">Month</button>
+            <button type="button" data-range="year">Year</button>
+          </div>
+        </div>
+        <div id="calorieWorkspace" class="workspace-content"></div>
+      </section>
+
+      <section id="view-journal" class="app-view" data-view="journal" hidden>
+        <div class="workspace-heading">
+          <div><p class="view-kicker">Daily context</p><h1>Journal</h1><p>Private encrypted notes that explain what the sensors cannot.</p></div>
+        </div>
+        <div class="journal-layout">
+          <form id="journalForm" class="journal-form">
+            <input id="journalEntryId" type="hidden" />
+            <label>
+              <span>When</span>
+              <input id="journalOccurredAt" type="datetime-local" required />
+            </label>
+            <label>
+              <span>What happened?</span>
+              <textarea id="journalBody" rows="8" maxlength="12000" placeholder="Exercise, food, medication, substances, illness, mood, stress, travel, sleep environment…"></textarea>
+            </label>
+            <label>
+              <span>Tags <small>comma separated</small></span>
+              <input id="journalTags" type="text" placeholder="exercise, rave, late meal" />
+            </label>
+            <div class="tag-suggestions" aria-label="Suggested tags">
+              <button type="button" data-tag="exercise">exercise</button>
+              <button type="button" data-tag="substance">substance</button>
+              <button type="button" data-tag="alcohol">alcohol</button>
+              <button type="button" data-tag="medication">medication</button>
+              <button type="button" data-tag="illness">illness</button>
+              <button type="button" data-tag="mood">mood</button>
+              <button type="button" data-tag="stress">stress</button>
+              <button type="button" data-tag="travel">travel</button>
+              <button type="button" data-tag="late meal">late meal</button>
+            </div>
+            <div class="form-actions">
+              <button id="cancelJournalEdit" class="button button-secondary" type="button" hidden>Cancel edit</button>
+              <button class="button button-primary" type="submit">Save context</button>
+            </div>
+          </form>
+          <div>
+            <div class="list-heading"><h2 id="journalListHeading">Entries</h2><span id="journalCount">0 entries</span></div>
+            <div id="journalList" class="journal-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-export" class="app-view" data-view="export" hidden>
+        <div class="workspace-heading">
+          <div><p class="view-kicker">Portable health data</p><h1>Export</h1><p>Structured values are primary; PNG summaries are optional companions.</p></div>
+        </div>
+        <div class="export-layout">
+          <form id="exportForm" class="export-form">
+            <fieldset>
+              <legend>Range</legend>
+              <div class="field-row">
+                <label><span>Start</span><input id="exportStart" type="date" required /></label>
+                <label><span>End (exclusive)</span><input id="exportEnd" type="date" required /></label>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>Package</legend>
+              <label class="radio-row"><input type="radio" name="exportType" value="analysis" checked /><span><strong>AI analysis ZIP</strong><small>Daily summaries, sleep details, manifest, optional journal and PNG.</small></span></label>
+              <label class="radio-row"><input type="radio" name="exportType" value="archive" /><span><strong>Full archive ZIP</strong><small>Also includes raw heart-rate and calorie intervals.</small></span></label>
+              <label class="radio-row"><input type="radio" name="exportType" value="png" /><span><strong>PNG visual summary</strong><small>A purpose-built visual report, not a viewport screenshot.</small></span></label>
+            </fieldset>
+            <fieldset>
+              <legend>Options</legend>
+              <label class="check-row"><input id="includeJournal" type="checkbox" /><span>Include decrypted journal.md</span></label>
+              <label class="check-row"><input id="includePng" type="checkbox" checked /><span>Include PNG summary in ZIP</span></label>
+            </fieldset>
+            <button class="button button-primary" type="submit">Create export</button>
+          </form>
+          <div>
+            <div class="list-heading"><h2>Recent exports</h2><span>Files expire after 24 hours</span></div>
+            <div id="exportList" class="export-list"><p class="empty-copy">No export jobs yet.</p></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

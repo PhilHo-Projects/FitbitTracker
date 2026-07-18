@@ -3,6 +3,21 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createHealthRepository } from './lib/db/health-repository.js';
+import { createMetricWriter } from './lib/db/metric-writer.js';
+import { createPool, databaseReady } from './lib/db/pool.js';
+import { createAnalysisDatasetService } from './lib/exports/dataset.js';
+import { createExportService } from './lib/exports/service.js';
+import { securityHeaders, validateMutationOrigin, createLoginThrottle } from './lib/http/security.js';
+import { createJournalCipher } from './lib/journal/crypto.js';
+import { createJournalRepository } from './lib/journal/repository.js';
+import { createGoogleHealthGateway } from './lib/jobs/google-health-gateway.js';
+import { createSyncRepository } from './lib/jobs/sync-repository.js';
+import { createSyncService } from './lib/jobs/sync-service.js';
+import { createExportRouter } from './lib/routes/export-routes.js';
+import { createHealthRouter } from './lib/routes/health-routes.js';
+import { createJournalRouter } from './lib/routes/journal-routes.js';
+import { createSyncRouter } from './lib/routes/sync-routes.js';
 import { createSessionToken, readCookie, verifySessionToken } from './lib/session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,27 +38,52 @@ function parseUpstreamBody(bodyText) {
   }
 }
 
-export function createApp({
-  env = process.env,
-  fetchImpl = globalThis.fetch,
-  now = () => Date.now(),
-} = {}) {
+function dateOffset(date, days) {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function positiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function createApp(options = {}) {
+  const {
+    env = process.env,
+    fetchImpl = globalThis.fetch,
+    now = () => Date.now(),
+    readinessCheck,
+    syncService = null,
+    exportService = null,
+  } = options;
+  const pool = options.pool === undefined ? createPool(env) : options.pool;
+  const healthRepository =
+    options.healthRepository ?? (pool ? createHealthRepository(pool) : null);
+  let journalRepository = options.journalRepository ?? null;
+  if (!journalRepository && pool && env.JOURNAL_ENCRYPTION_KEYS) {
+    journalRepository = createJournalRepository(
+      pool,
+      createJournalCipher(env.JOURNAL_ENCRYPTION_KEYS),
+    );
+  }
+
   const app = express();
   const publicDir = path.join(__dirname, 'public');
-  const webhookUrl =
-    env.N8N_WEBHOOK_URL || 'https://n8n.philippeho.dev/webhook/fitness-sync';
+  const webhookUrl = env.N8N_WEBHOOK_URL || '';
   const webhookToken = env.N8N_WEBHOOK_TOKEN || '';
   const dashboardPassword = env.DASHBOARD_PASSWORD || '';
   const sessionSecret = env.DASHBOARD_SESSION_SECRET || '';
   const secureCookie = env.NODE_ENV === 'production';
+  const loginThrottle = createLoginThrottle({ now });
 
   app.disable('x-powered-by');
-  app.use((_req, res, next) => {
-    res.set('Cache-Control', 'no-store');
-    next();
-  });
-  app.use(express.json({ limit: '16kb' }));
-  app.use(express.urlencoded({ extended: false, limit: '16kb' }));
+  if (env.NODE_ENV === 'production') app.set('trust proxy', 1);
+  app.use(securityHeaders);
+  app.use(express.json({ limit: '64kb' }));
+  app.use(express.urlencoded({ extended: false, limit: '32kb' }));
+  app.use(validateMutationOrigin);
 
   const hasAuthConfig = () => Boolean(dashboardPassword && sessionSecret);
   const isAuthenticated = (req) => {
@@ -51,40 +91,35 @@ export function createApp({
     return hasAuthConfig() && verifySessionToken(token, sessionSecret, now());
   };
   const requireAuth = (req, res, next) => {
-    if (isAuthenticated(req)) {
-      return next();
-    }
-
-    if (req.path.startsWith('/api/')) {
+    if (isAuthenticated(req)) return next();
+    if (req.originalUrl.startsWith('/api/') || req.baseUrl.startsWith('/api')) {
       return res.status(401).json({ ok: false, message: 'Authentication required' });
     }
-
     return res.redirect('/login');
   };
 
   app.get('/healthz', (_req, res) => {
-    res.json({ ok: true, service: 'fitbit-tracker', ts: new Date(now()).toISOString() });
+    res.json({ ok: true, service: 'personal-health-data-hub', ts: new Date(now()).toISOString() });
+  });
+  app.get('/readyz', async (_req, res) => {
+    const ready = readinessCheck ? await readinessCheck() : await databaseReady(pool);
+    res.status(ready ? 200 : 503).json({ ok: ready, ready });
   });
 
   app.get('/login', (req, res) => {
-    if (isAuthenticated(req)) {
-      return res.redirect('/');
-    }
+    if (isAuthenticated(req)) return res.redirect('/');
     return res.sendFile(path.join(publicDir, 'login.html'));
   });
 
-  app.post('/api/login', (req, res) => {
+  app.post('/api/login', loginThrottle.middleware, (req, res) => {
     if (!hasAuthConfig()) {
-      return res.status(503).json({
-        ok: false,
-        message: 'Dashboard authentication is not configured',
-      });
+      return res.status(503).json({ ok: false, message: 'Dashboard authentication is not configured' });
     }
-
     if (!constantTimeEqual(req.body?.password ?? '', dashboardPassword)) {
+      loginThrottle.failed(req.loginThrottleKey);
       return res.status(401).json({ ok: false, message: 'Invalid password' });
     }
-
+    loginThrottle.succeeded(req.loginThrottleKey);
     const token = createSessionToken(sessionSecret, now(), SESSION_TTL_MS);
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,
@@ -109,74 +144,104 @@ export function createApp({
   app.get(['/', '/index.html'], requireAuth, (_req, res) => {
     res.sendFile(path.join(publicDir, 'index.html'));
   });
-
   app.use(express.static(publicDir, { index: false, maxAge: 0 }));
 
   app.get('/api/session', requireAuth, (_req, res) => {
     res.json({ ok: true, authenticated: true });
   });
-
   app.get('/api/config', requireAuth, (_req, res) => {
     res.json({
       webhookConfigured: Boolean(webhookUrl),
       tokenSet: Boolean(webhookToken),
       authenticationConfigured: hasAuthConfig(),
+      databaseConfigured: Boolean(pool),
+      journalConfigured: Boolean(journalRepository),
+      exportsConfigured: Boolean(exportService),
     });
   });
 
-  app.post(['/api/sleep', '/api/fitness'], requireAuth, async (_req, res) => {
+  if (healthRepository) {
+    app.use('/api', createHealthRouter({ repository: healthRepository, requireAuth }));
+  }
+  if (journalRepository) {
+    app.use('/api/journal', createJournalRouter({ repository: journalRepository, requireAuth }));
+  } else {
+    app.use('/api/journal', requireAuth, (_req, res) => {
+      res.status(503).json({ ok: false, message: 'Journal encryption is not configured' });
+    });
+  }
+  if (syncService) {
+    app.use('/api/sync', createSyncRouter({ service: syncService, requireAuth }));
+  } else {
+    app.use('/api/sync', requireAuth, (_req, res) => {
+      res.status(503).json({ ok: false, message: 'Synchronization worker is not configured' });
+    });
+  }
+  if (exportService) {
+    app.use('/api/exports', createExportRouter({ service: exportService, requireAuth }));
+  } else {
+    app.use('/api/exports', requireAuth, (_req, res) => {
+      res.status(503).json({ ok: false, message: 'Export worker is not configured' });
+    });
+  }
+
+  app.post(['/api/sleep', '/api/fitness'], requireAuth, async (_req, res, next) => {
     const started = now();
-
-    if (!webhookUrl) {
-      return res.status(503).json({
-        ok: false,
-        stage: 'configuration',
-        message: 'N8N_WEBHOOK_URL is not configured',
-        elapsedMs: now() - started,
-      });
-    }
-
     try {
+      if (healthRepository) {
+        const date = new Date(now()).toISOString().slice(0, 10);
+        if (_req.path === '/api/sleep') {
+          const data = await healthRepository.getSleepRange(dateOffset(date, -6), dateOffset(date, 1));
+          return res.json({
+            ok: true,
+            elapsedMs: now() - started,
+            data: {
+              latest: data.sessions[0] ?? null,
+              nights: data.sessions,
+              naps: [],
+              summary: { nightsCount: data.sessions.length },
+              range: {
+                startDate: dateOffset(date, -6),
+                endDateExclusive: dateOffset(date, 1),
+              },
+            },
+          });
+        }
+        return res.json({ ok: true, elapsedMs: now() - started, data: await healthRepository.getDashboard(date) });
+      }
+
       const upstream = await fetchImpl(webhookUrl, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-fitness-token': webhookToken,
-        },
+        headers: { 'content-type': 'application/json', 'x-fitness-token': webhookToken },
         body: JSON.stringify({
           source: 'fitbit-tracker-dashboard',
           requestedAt: new Date(now()).toISOString(),
         }),
       });
-
-      const bodyText = await upstream.text();
-      const data = parseUpstreamBody(bodyText);
-
+      const data = parseUpstreamBody(await upstream.text());
       if (!upstream.ok) {
         return res.status(502).json({
           ok: false,
           stage: 'n8n-webhook',
           status: upstream.status,
           message: `n8n webhook returned HTTP ${upstream.status}`,
-          hint:
-            upstream.status === 404
-              ? 'The n8n workflow is missing or inactive.'
-              : 'Check the latest n8n execution for the upstream error.',
           data,
           elapsedMs: now() - started,
         });
       }
-
       return res.json({ ok: true, elapsedMs: now() - started, data });
     } catch (error) {
-      return res.status(502).json({
-        ok: false,
-        stage: 'proxy',
-        message: error?.message || String(error),
-        hint: 'Could not reach the configured n8n webhook.',
-        elapsedMs: now() - started,
-      });
+      return next(error);
     }
+  });
+
+  app.use((error, _req, res, _next) => {
+    const status = Number(error.status) || (error.message?.includes('not found') ? 404 : 500);
+    if (status >= 500) console.error('Request failed', { message: error.message });
+    res.status(status).json({
+      ok: false,
+      message: status >= 500 ? 'The request could not be completed' : error.message,
+    });
   });
 
   return app;
@@ -187,8 +252,50 @@ const isDirectRun =
 
 if (isDirectRun) {
   const port = process.env.PORT || 3000;
-  const app = createApp();
-  app.listen(port, () => {
-    console.log(`FitbitTracker dashboard listening on http://localhost:${port}`);
+  const pool = createPool();
+  const journalRepository =
+    pool && process.env.JOURNAL_ENCRYPTION_KEYS
+      ? createJournalRepository(pool, createJournalCipher(process.env.JOURNAL_ENCRYPTION_KEYS))
+      : null;
+  const syncService =
+    pool && process.env.N8N_WEBHOOK_URL && process.env.N8N_WEBHOOK_TOKEN
+      ? createSyncService({
+          pool,
+          repository: createSyncRepository(pool),
+          gateway: createGoogleHealthGateway({
+            url: process.env.N8N_WEBHOOK_URL,
+            token: process.env.N8N_WEBHOOK_TOKEN,
+          }),
+          writer: createMetricWriter(pool),
+          rawRetentionDays: positiveNumber(process.env.RAW_RETENTION_DAYS, null),
+        })
+      : null;
+  const exportService = pool
+    ? createExportService({
+        pool,
+        datasetService: createAnalysisDatasetService({ pool, journalRepository }),
+        storageDirectory:
+          process.env.EXPORT_STORAGE_DIR || path.join(__dirname, '.runtime', 'exports'),
+      })
+    : null;
+  const app = createApp({ pool, syncService, journalRepository, exportService });
+  const server = app.listen(port, () => {
+    console.log(`Personal Health Data Hub listening on http://localhost:${port}`);
   });
+  syncService?.start({
+    scheduleEnabled: process.env.SYNC_SCHEDULE_ENABLED !== 'false',
+    syncIntervalMs:
+      positiveNumber(process.env.SYNC_INTERVAL_HOURS, 3) * 60 * 60 * 1000,
+    scheduledLookbackDays: positiveNumber(process.env.SYNC_SCHEDULE_LOOKBACK_DAYS, 7),
+  });
+  exportService?.start();
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, async () => {
+      syncService?.stop();
+      exportService?.stop();
+      server.close();
+      await pool?.end();
+      process.exit(0);
+    });
+  }
 }
