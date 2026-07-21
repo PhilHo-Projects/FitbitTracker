@@ -298,7 +298,7 @@ test('PostgreSQL compact writes are set-based no-ops for identical rows and upda
     const zero = await client.query('SELECT kilocalories FROM calorie_intervals_compact');
     assert.equal(Number(zero.rows[0].kilocalories), 0);
 
-    const legacyWriter = createMetricWriter(client);
+    const legacyWriter = createMetricWriter(client, { clientOwnedByCaller: true });
     await legacyWriter.upsertHeartSamples(accountId, [
       { ...watch, providerKey: 'legacy-watch', beatsPerMinute: 64 },
       { ...watchNextDay, providerKey: 'legacy-watch-next-day' },

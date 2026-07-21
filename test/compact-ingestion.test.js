@@ -190,18 +190,29 @@ test('legacy writes remain active while compact dual writes default off and requ
   assert.deepEqual(enabledResult, { inserted: 1, updated: 0, unchanged: 0 });
 });
 
-test('metric writer stays on a supplied query-only transaction context', async () => {
+test('metric writer does not reconnect or release a caller-owned client', async () => {
   const queries = [];
+  let connectCalls = 0;
+  let releaseCalls = 0;
   const transactionClient = {
+    async connect() {
+      connectCalls += 1;
+      throw new Error('caller-owned client must not be reconnected');
+    },
     async query(sql) {
       queries.push(sql);
       return { rows: [], rowCount: 0 };
     },
+    release() {
+      releaseCalls += 1;
+    },
   };
-  const writer = createMetricWriter(transactionClient);
+  const writer = createMetricWriter(transactionClient, { clientOwnedByCaller: true });
 
   await writer.upsertHeartSamples(accountId, [heartSample({ providerKey: 'transaction-heart' })]);
 
+  assert.equal(connectCalls, 0);
+  assert.equal(releaseCalls, 0);
   assert.equal(queries[0], 'BEGIN');
   assert.match(queries[1], /INSERT INTO heart_rate_samples/);
   assert.equal(queries.at(-1), 'COMMIT');

@@ -795,9 +795,9 @@ test('a two-page sync defers each daily finalization until the last provider pag
   const finalized = [];
   const writer = {
     ...baseWriter,
-    async recalculateDaily(sourceAccountId, date) {
-      finalized.push({ sourceAccountId, date });
-      return baseWriter.recalculateDaily(sourceAccountId, date);
+    async recalculateDaily(sourceAccountId, date, database) {
+      finalized.push({ sourceAccountId, date, database });
+      return baseWriter.recalculateDaily(sourceAccountId, date, database);
     },
   };
   let page = 0;
@@ -838,6 +838,8 @@ test('a two-page sync defers each daily finalization until the last provider pag
   assert.deepEqual(finalized, []);
   await service.runOnce();
   assert.deepEqual(finalized.map(({ date }) => date), ['2026-07-16', '2026-07-17']);
+  assert.equal(finalized.every(({ database }) => typeof database?.query === 'function'), true);
+  assert.equal(finalized[0].database, finalized[1].database);
   await pool.end();
 });
 
