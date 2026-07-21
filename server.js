@@ -3,6 +3,11 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseArchiveConfig } from './lib/archive/config.js';
+import { createHealthArchiveRepository } from './lib/archive/repository.js';
+import { createArchiveObjectStore, createS3ClientFromConfig } from './lib/archive/s3.js';
+import { createHealthArchiveService } from './lib/archive/service.js';
+import { createHealthArchiveWorker } from './lib/archive/worker.js';
 import { createHealthRepository } from './lib/db/health-repository.js';
 import { createMetricWriter } from './lib/db/metric-writer.js';
 import { createPool, databaseReady } from './lib/db/pool.js';
@@ -279,8 +284,43 @@ if (isDirectRun) {
         datasetService: createAnalysisDatasetService({ pool, journalRepository }),
         storageDirectory:
           process.env.EXPORT_STORAGE_DIR || path.join(__dirname, '.runtime', 'exports'),
-      })
-    : null;
+        })
+      : null;
+  let archiveWorker = null;
+  let archiveObjectClient = null;
+  try {
+    const archiveConfig = parseArchiveConfig(process.env);
+    if (pool && archiveConfig.enabled) {
+      const archiveRepository = createHealthArchiveRepository(pool);
+      archiveObjectClient = createS3ClientFromConfig(archiveConfig);
+      const archiveObjectStore = createArchiveObjectStore({
+        client: archiveObjectClient,
+        bucket: archiveConfig.bucket,
+      });
+      archiveWorker = createHealthArchiveWorker({
+        enabled: true,
+        repository: archiveRepository,
+        intervalMs:
+          positiveNumber(process.env.HEALTH_ARCHIVE_INTERVAL_HOURS, 24) * 60 * 60 * 1000,
+        serviceFactory: () => createHealthArchiveService({
+          pool,
+          repository: archiveRepository,
+          objectStore: archiveObjectStore,
+          config: archiveConfig,
+          batchSize: positiveNumber(process.env.HEALTH_ARCHIVE_BATCH_SIZE, 1000),
+          temporaryRoot:
+            process.env.HEALTH_ARCHIVE_TEMP_DIR
+            || path.join(__dirname, '.runtime', 'health-archive'),
+        }),
+        onError: (error) => console.error(error.message),
+      });
+    }
+  } catch {
+    // Archive configuration and storage are intentionally isolated from readiness and sync.
+    console.error('Health archive worker is disabled because initialization failed');
+    archiveObjectClient?.destroy();
+    archiveObjectClient = null;
+  }
   const app = createApp({ pool, syncService, journalRepository, exportService });
   const server = app.listen(port, () => {
     console.log(`Personal Health Data Hub listening on http://localhost:${port}`);
@@ -292,10 +332,13 @@ if (isDirectRun) {
     scheduledLookbackDays: positiveNumber(process.env.SYNC_SCHEDULE_LOOKBACK_DAYS, 7),
   });
   exportService?.start();
+  archiveWorker?.start();
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, async () => {
       syncService?.stop();
       exportService?.stop();
+      archiveWorker?.stop();
+      archiveObjectClient?.destroy();
       server.close();
       await pool?.end();
       process.exit(0);

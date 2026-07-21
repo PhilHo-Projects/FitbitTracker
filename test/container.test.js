@@ -12,6 +12,7 @@ test('production container applies migrations before starting and includes migra
 
   assert.equal(packageJson.scripts.start, 'node scripts/start.mjs');
   assert.equal(packageJson.scripts['health:compact'], 'node scripts/compact-health.mjs');
+  assert.equal(packageJson.scripts['health:archive'], 'node scripts/health-archive.mjs');
   assert.match(dockerfile, /COPY --from=build \/app\/db \.\/db/);
   assert.match(dockerfile, /COPY --from=build \/app\/scripts \.\/scripts/);
   assert.match(dockerfile, /apt-get install -y --no-install-recommends curl/);
@@ -23,4 +24,7 @@ test('production container applies migrations before starting and includes migra
   assert.match(server, /RAW_RETENTION_DAYS/);
   assert.match(server, /HEALTH_COMPACT_WRITES_ENABLED === 'true'/);
   assert.match(server, /HEALTH_RAW_PRUNING_ENABLED === 'true'/);
+  assert.match(server, /archiveConfig\.enabled/);
+  assert.match(server, /archiveWorker\?\.start\(\)/);
+  assert.match(server, /archiveWorker\?\.stop\(\)/);
 });

@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import pg from 'pg';
 
+import { createHealthArchiveRepository } from '../lib/archive/repository.js';
 import { runCompactHealthOperation } from '../lib/db/compact-backfill.js';
 import { createCompactMetricWriter } from '../lib/db/compact-metric-writer.js';
 import { applyMigrations } from '../lib/db/migrations.js';
@@ -38,6 +39,74 @@ test('PostgreSQL integration harness uses only a generated isolated schema', () 
   assert.throws(() => quoteIntegrationSchema('public'), /must be generated/);
   assert.equal(integrationSchemaToDrop(schema, false), null);
   assert.equal(integrationSchemaToDrop(schema, true), `"${schema}"`);
+});
+
+test('PostgreSQL verified-month pruning deletes compact rows in bounded authorized batches', { skip: !integrationUrl }, async () => {
+  const pool = new pg.Pool({ connectionString: integrationUrl });
+  const schema = createIntegrationSchemaName();
+  const quotedSchema = quoteIntegrationSchema(schema);
+  let client;
+  let schemaWasCreated = false;
+
+  try {
+    await pool.query(`CREATE SCHEMA ${quotedSchema}`);
+    schemaWasCreated = true;
+    await applyMigrations(pool, { schema });
+    client = await pool.connect();
+    await client.query(`SET search_path TO ${quotedSchema}`);
+    const accountId = '11111111-1111-1111-1111-111111111111';
+    const streamId = '22222222-2222-2222-2222-222222222222';
+    const catalogId = '33333333-3333-3333-3333-333333333333';
+    await client.query(
+      `INSERT INTO source_accounts (id, provider, provider_account_id)
+       VALUES ($1, 'archive-test', 'prune-integration')`,
+      [accountId],
+    );
+    await client.query(
+      `INSERT INTO source_streams (id, source_account_id, metadata, metadata_hash)
+       VALUES ($1, $2, '{"dataType":"heart-rate"}', $3)`,
+      [streamId, accountId, 'a'.repeat(64)],
+    );
+    await client.query(
+      `INSERT INTO heart_rate_samples_compact
+         (source_account_id, source_stream_id, civil_date, sampled_at, beats_per_minute)
+       VALUES ($1, $2, '2026-01-02', '2026-01-02T12:00:00Z', 70)`,
+      [accountId, streamId],
+    );
+    await client.query(
+      `INSERT INTO calorie_intervals_compact
+         (source_account_id, source_stream_id, civil_date, interval_type,
+          start_at, end_at, kilocalories)
+       VALUES ($1, $2, '2026-01-02', 'active',
+               '2026-01-02T12:00:00Z', '2026-01-02T12:05:00Z', 0)`,
+      [accountId, streamId],
+    );
+    await client.query(
+      `INSERT INTO health_archive_catalog
+         (id, source_account_id, archive_month, archive_version, state,
+          heart_sample_count, calorie_interval_count, verified_at)
+       VALUES ($1, $2, '2026-01-01', 1, 'verified', 1, 1, CURRENT_TIMESTAMP)`,
+      [catalogId, accountId],
+    );
+
+    const removed = await createHealthArchiveRepository(client)
+      .pruneVerifiedMonth(catalogId, { batchSize: 1 });
+
+    assert.equal(removed.compactHeartRateSamples, 1);
+    assert.equal(removed.compactCalorieIntervals, 1);
+    assert.equal(
+      Number((await client.query('SELECT COUNT(*) AS count FROM heart_rate_samples_compact')).rows[0].count),
+      0,
+    );
+    assert.equal(
+      (await client.query('SELECT state FROM health_archive_catalog WHERE id = $1', [catalogId])).rows[0].state,
+      'pruned',
+    );
+  } finally {
+    client?.release();
+    if (schemaWasCreated) await pool.query(`DROP SCHEMA ${quotedSchema} CASCADE`);
+    await pool.end();
+  }
 });
 
 test('PostgreSQL integration applies the lifelong archive schema and constraints', { skip: !integrationUrl }, async () => {
