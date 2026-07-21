@@ -70,6 +70,24 @@ test('compact operator defaults to read-only validation and requires explicit ba
   assert.throws(() => parseCompactHealthArgs(['--unknown']), /Unknown compact health option/);
 });
 
+test('calorie validation compares interval types and permanent daily summary semantics', async () => {
+  const pool = legacyPool();
+
+  await runCompactHealthOperation({ pool, mode: 'validate' });
+
+  const sql = pool.queries.find(({ sql: query }) =>
+    query.includes('calorie_intervals_compact') && query.includes('FULL OUTER JOIN'),
+  ).sql;
+  assert.equal((sql.match(/AS total_kcal/g) ?? []).length, 2);
+  assert.equal((sql.match(/AS active_kcal/g) ?? []).length, 2);
+  assert.equal((sql.match(/AS basal_kcal/g) ?? []).length, 2);
+  assert.match(sql, /LEFT JOIN calorie_daily_summaries AS summary/);
+  assert.match(sql, /ROW_TO_JSON\(summary\) AS summary/);
+  assert.match(sql, /summary\.interval_count/);
+  assert.match(sql, /summary\.coverage_seconds/);
+  assert.match(sql, /summary\.total_derived/);
+});
+
 test('dry-run backfill scans bounded batches without writing or deleting source rows', async () => {
   const pool = legacyPool({
     hearts: [

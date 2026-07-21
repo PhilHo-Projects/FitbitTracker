@@ -8,6 +8,8 @@ import { runCompactHealthOperation } from '../lib/db/compact-backfill.js';
 import { createCompactMetricWriter } from '../lib/db/compact-metric-writer.js';
 import { applyMigrations } from '../lib/db/migrations.js';
 import { createMetricWriter } from '../lib/db/metric-writer.js';
+import { createSyncRepository } from '../lib/jobs/sync-repository.js';
+import { createSyncService } from '../lib/jobs/sync-service.js';
 
 const integrationUrl = process.env.PG_INTEGRATION_URL;
 const integrationSchemaPrefix = 'health_archive_integration_';
@@ -313,6 +315,145 @@ test('PostgreSQL compact writes are set-based no-ops for identical rows and upda
       valid: true,
       mismatches: { heart: [], calories: [] },
     });
+
+    await client.query(
+      `UPDATE calorie_daily_summaries SET total_kcal = 999
+       WHERE source_account_id = $1 AND civil_date = '2026-11-01'`,
+      [accountId],
+    );
+    const staleDailyValidation = await runCompactHealthOperation({ pool: client, mode: 'validate' });
+    assert.equal(staleDailyValidation.valid, false);
+    assert.equal(staleDailyValidation.mismatches.calories.length, 1);
+
+    await legacyWriter.recalculateDaily(accountId, '2026-11-01');
+    await client.query(
+      `UPDATE calorie_intervals_compact SET interval_type = 'basal'
+       WHERE source_account_id = $1 AND civil_date = '2026-11-01' AND interval_type = 'active'`,
+      [accountId],
+    );
+    const typeSwapValidation = await runCompactHealthOperation({ pool: client, mode: 'validate' });
+    assert.equal(typeSwapValidation.valid, false);
+    assert.equal(typeSwapValidation.mismatches.calories.length, 1);
+  } finally {
+    client?.release();
+    if (schemaWasCreated) await pool.query(`DROP SCHEMA ${quotedSchema} CASCADE`);
+    await pool.end();
+  }
+});
+
+test('PostgreSQL repeated two-day syncs are compact no-ops and finalize each date once per job', { skip: !integrationUrl }, async () => {
+  const pool = new pg.Pool({ connectionString: integrationUrl });
+  const schema = createIntegrationSchemaName();
+  const quotedSchema = quoteIntegrationSchema(schema);
+  let client;
+  let schemaWasCreated = false;
+
+  try {
+    await pool.query(`CREATE SCHEMA ${quotedSchema}`);
+    schemaWasCreated = true;
+    await applyMigrations(pool, { schema });
+    client = await pool.connect();
+    await client.query(`SET search_path TO ${quotedSchema}`);
+    const query = client.query.bind(client);
+    const database = {
+      query,
+      async connect() {
+        return { query, release() {} };
+      },
+    };
+    const accountId = '22222222-2222-2222-2222-222222222222';
+    await database.query(
+      `INSERT INTO source_accounts (
+        id, provider, provider_account_id, timezone, membership_start_date
+      ) VALUES ($1, 'google-health', 'repeat-sync', 'America/Toronto', '2026-01-01')`,
+      [accountId],
+    );
+
+    const compactResults = [];
+    const compactWriter = createCompactMetricWriter(database);
+    const recordingCompactWriter = {
+      async upsertHeartSamples(...args) {
+        const result = await compactWriter.upsertHeartSamples(...args);
+        compactResults.push(result);
+        return result;
+      },
+      async upsertCalorieIntervals(...args) {
+        return compactWriter.upsertCalorieIntervals(...args);
+      },
+    };
+    const baseWriter = createMetricWriter(database, {
+      compactWritesEnabled: true,
+      compactWriter: recordingCompactWriter,
+    });
+    const finalizedDates = [];
+    const writer = {
+      ...baseWriter,
+      async recalculateDaily(sourceAccountId, date, transaction) {
+        const result = await baseWriter.recalculateDaily(sourceAccountId, date, transaction);
+        finalizedDates.push(date);
+        return result;
+      },
+    };
+    const service = createSyncService({
+      pool: database,
+      repository: createSyncRepository(database, { advisoryLocks: false }),
+      writer,
+      gateway: {
+        async request({ pageToken }) {
+          const civilDate = pageToken ? '2026-07-17' : '2026-07-16';
+          return {
+            data: {
+              dataPoints: [{
+                dataPointName: `repeat-heart-${civilDate}`,
+                heartRate: {
+                  samples: [{
+                    sampleTime: `${civilDate}T12:00:00Z`,
+                    utcOffset: '-14400s',
+                    beatsPerMinute: civilDate.endsWith('16') ? 71 : 72,
+                  }],
+                },
+              }],
+            },
+            nextPageToken: pageToken ? null : 'second-day',
+          };
+        },
+      },
+    });
+
+    async function runTwoPageJob(expectedFinalizationsAfterFirstPage) {
+      await service.enqueue({
+        mode: 'custom',
+        startDate: '2026-07-16',
+        endDateExclusive: '2026-07-18',
+        metrics: ['heart-rate'],
+      });
+      await service.runOnce();
+      assert.equal(finalizedDates.length, expectedFinalizationsAfterFirstPage);
+      await service.runOnce();
+      assert.equal((await service.status()).recent[0].status, 'completed');
+    }
+
+    await runTwoPageJob(0);
+    await runTwoPageJob(2);
+
+    assert.deepEqual(compactResults.slice(0, 2), [
+      { inserted: 1, updated: 0, unchanged: 0 },
+      { inserted: 1, updated: 0, unchanged: 0 },
+    ]);
+    assert.deepEqual(compactResults.slice(2), [
+      { inserted: 0, updated: 0, unchanged: 1 },
+      { inserted: 0, updated: 0, unchanged: 1 },
+    ]);
+    assert.deepEqual(finalizedDates, [
+      '2026-07-16',
+      '2026-07-17',
+      '2026-07-16',
+      '2026-07-17',
+    ]);
+    assert.equal(
+      Number((await database.query('SELECT COUNT(*) AS count FROM heart_rate_samples_compact')).rows[0].count),
+      2,
+    );
   } finally {
     client?.release();
     if (schemaWasCreated) await pool.query(`DROP SCHEMA ${quotedSchema} CASCADE`);

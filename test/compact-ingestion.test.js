@@ -63,6 +63,19 @@ test('canonical source metadata recursively ignores object key order', () => {
   assert.match(hashSourceMetadata(left), /^[a-f0-9]{64}$/);
 });
 
+test('canonical source metadata totally orders distinct Unicode keys', () => {
+  const composed = '\u00e9';
+  const decomposed = 'e\u0301';
+  const left = { [composed]: 'composed', [decomposed]: 'decomposed' };
+  const right = { [decomposed]: 'decomposed', [composed]: 'composed' };
+
+  assert.equal(
+    JSON.stringify(canonicalizeSourceMetadata(left)),
+    JSON.stringify(canonicalizeSourceMetadata(right)),
+  );
+  assert.equal(hashSourceMetadata(left), hashSourceMetadata(right));
+});
+
 test('compact heart pages resolve streams then use one set-based statement with write counts', async () => {
   const pool = recordingPool([{ rows: [{ inserted: true }, { inserted: false }] }]);
   const writer = createCompactMetricWriter(pool);

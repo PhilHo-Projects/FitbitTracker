@@ -214,7 +214,7 @@ test('raw pruning refuses unarchived rows and removes only verified archive mont
   const writer = createMetricWriter(pool);
   const sourceAccountId = '75ce6554-70c7-48be-a688-d0079384fcb1';
 
-  for (const civilDate of ['2026-01-01', '2026-07-16']) {
+  for (const civilDate of ['2026-01-01', '2026-04-01', '2026-04-18', '2026-07-16']) {
     await writer.upsertHeartSamples(sourceAccountId, [
       {
         providerKey: `heart-${civilDate}`,
@@ -259,10 +259,15 @@ test('raw pruning refuses unarchived rows and removes only verified archive mont
     `INSERT INTO health_archive_catalog (
       id, source_account_id, archive_month, archive_version, is_active, state,
       heart_sample_count, calorie_interval_count, verified_at
-    ) VALUES (
-      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', $1, '2026-01-01', 1, true, 'verified',
-      1, 1, CURRENT_TIMESTAMP
-    )`,
+    ) VALUES
+      (
+        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', $1, '2026-01-01', 1, true, 'verified',
+        1, 1, CURRENT_TIMESTAMP
+      ),
+      (
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', $1, '2026-04-01', 1, true, 'verified',
+        2, 2, CURRENT_TIMESTAMP
+      )`,
     [sourceAccountId],
   );
   const removed = await writer.pruneRawMetricsBefore(sourceAccountId, '2026-04-19');
@@ -289,10 +294,10 @@ test('raw pruning refuses unarchived rows and removes only verified archive mont
   assert.equal(Number(retainedHeart.average_bpm), 70);
   assert.equal(Number(retainedHeart.sample_count), 1);
   assert.deepEqual(counts, {
-    heart_rate_samples: 1,
-    calorie_intervals: 1,
-    heart_rate_daily_summaries: 2,
-    calorie_daily_summaries: 2,
+    heart_rate_samples: 3,
+    calorie_intervals: 3,
+    heart_rate_daily_summaries: 4,
+    calorie_daily_summaries: 4,
     sleep_sessions: 1,
   });
   await pool.end();
