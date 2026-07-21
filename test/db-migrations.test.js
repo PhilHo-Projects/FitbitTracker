@@ -24,6 +24,7 @@ test('migrations create the permanent health archive tables once', async () => {
     '002_sync_queue_concurrency.sql',
     '003_sync_claim_leases.sql',
     '004_lifelong_health_archive.sql',
+    '005_health_archive_catalog_month_constraint.sql',
   ]);
   assert.deepEqual(second, []);
   assert.deepEqual(
@@ -51,6 +52,19 @@ test('migrations create the permanent health archive tables once', async () => {
       'sync_chunks',
       'sync_jobs',
     ],
+  );
+
+  await pool.end();
+});
+
+test('migrations reject unsafe schema identifiers', async () => {
+  const memory = newDb({ noAstCoverageCheck: true });
+  const adapter = memory.adapters.createPg();
+  const pool = new adapter.Pool();
+
+  await assert.rejects(
+    applyMigrations(pool, { schema: 'public; DROP SCHEMA public CASCADE' }),
+    /simple PostgreSQL identifier/,
   );
 
   await pool.end();
@@ -166,6 +180,22 @@ test('lifelong archive schema rejects duplicate source streams and duplicate sem
     pool.query(
       `INSERT INTO calorie_intervals_compact
         (source_account_id, source_stream_id, civil_date, interval_type, start_at, end_at, utc_offset_seconds, kilocalories)
+       VALUES ($1, $2, '2026-07-01', 'basal', '2026-07-01T12:15:00Z', '2026-07-01T12:15:00Z', -14400, 1)`,
+      [accountId, streamId],
+    ),
+  );
+  await assert.rejects(
+    pool.query(
+      `INSERT INTO heart_rate_samples_compact
+        (source_account_id, source_stream_id, civil_date, sampled_at, utc_offset_seconds, beats_per_minute)
+       VALUES ($1, $2, '2026-07-01', '2026-07-01T13:00:00Z', -14400, 0)`,
+      [accountId, streamId],
+    ),
+  );
+  await assert.rejects(
+    pool.query(
+      `INSERT INTO calorie_intervals_compact
+        (source_account_id, source_stream_id, civil_date, interval_type, start_at, end_at, utc_offset_seconds, kilocalories)
        VALUES ($1, $2, '2026-07-01', 'unknown', '2026-07-01T12:10:00Z', '2026-07-01T12:15:00Z', -14400, 1)`,
       [accountId, streamId],
     ),
@@ -196,6 +226,34 @@ test('archive catalog permits superseded versions but limits each account month 
       [accountId],
     ),
   );
+  for (const [id, archiveMonth, archiveVersion, heartCount, calorieCount, byteSize, keyVersion] of [
+    ['99999999-9999-9999-9999-999999999999', '2026-07-02', 1, 0, 0, null, null],
+    ['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '2026-08-01', 0, 0, 0, null, null],
+    ['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '2026-08-01', 1, -1, 0, null, null],
+    ['cccccccc-cccc-cccc-cccc-cccccccccccc', '2026-08-01', 1, 0, -1, null, null],
+    ['dddddddd-dddd-dddd-dddd-dddddddddddd', '2026-08-01', 1, 0, 0, -1, null],
+    ['eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', '2026-08-01', 1, 0, 0, null, 0],
+  ]) {
+    await assert.rejects(
+      pool.query(
+        `INSERT INTO health_archive_catalog
+          (id, source_account_id, archive_month, archive_version, is_active, state,
+           heart_sample_count, calorie_interval_count, byte_size, encryption_key_version)
+         VALUES ($1, $2, $3, $4, false, 'failed', $5, $6, $7, $8)`,
+        [id, accountId, archiveMonth, archiveVersion, heartCount, calorieCount, byteSize, keyVersion],
+      ),
+    );
+  }
+  await assert.rejects(
+    pool.query(
+      `INSERT INTO health_archive_catalog
+        (id, source_account_id, archive_month, archive_version, is_active, state,
+         heart_sample_count, calorie_interval_count, measurement_started_at, measurement_ended_at)
+       VALUES ('ffffffff-ffff-ffff-ffff-ffffffffffff', $1, '2026-08-01', 1, false, 'failed',
+               0, 0, '2026-08-02T00:00:00Z', '2026-08-01T00:00:00Z')`,
+      [accountId],
+    ),
+  );
   await pool.query(
     `INSERT INTO health_archive_catalog
       (id, source_account_id, archive_month, archive_version, is_active, state, object_key, heart_sample_count, calorie_interval_count)
@@ -207,6 +265,14 @@ test('archive catalog permits superseded versions but limits each account month 
       `INSERT INTO health_archive_catalog
         (id, source_account_id, archive_month, archive_version, is_active, state, object_key, heart_sample_count, calorie_interval_count)
        VALUES ('88888888-8888-8888-8888-888888888888', $1, '2026-08-01', 1, true, 'unknown', 'bad', 0, 0)`,
+      [accountId],
+    ),
+  );
+  await assert.rejects(
+    pool.query(
+      `INSERT INTO heart_rate_daily_summaries
+        (id, source_account_id, civil_date, aggregation_version)
+       VALUES ('12121212-1212-1212-1212-121212121212', $1, '2026-08-01', 0)`,
       [accountId],
     ),
   );
