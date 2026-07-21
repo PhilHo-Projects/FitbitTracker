@@ -47,6 +47,8 @@ try {
       sourceAccountId: options.sourceAccountId,
       archiveMonth: options.archiveMonth,
       state: options.state,
+      limit: options.limit,
+      cursor: options.cursor,
     });
   } else if (options.command === 'verify') {
     result = await service.verifyById(options.id);

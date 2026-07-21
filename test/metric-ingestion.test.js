@@ -209,96 +209,9 @@ test('metric upserts are idempotent, accept corrections, and preserve zero-versu
   await pool.end();
 });
 
-test('raw pruning refuses unarchived rows and removes only verified archive months', async () => {
+test('metric writer exposes no independent raw deletion path', async () => {
   const pool = await createDatabase();
   const writer = createMetricWriter(pool);
-  const sourceAccountId = '75ce6554-70c7-48be-a688-d0079384fcb1';
-
-  for (const civilDate of ['2026-01-01', '2026-04-01', '2026-04-18', '2026-07-16']) {
-    await writer.upsertHeartSamples(sourceAccountId, [
-      {
-        providerKey: `heart-${civilDate}`,
-        civilDate,
-        sampledAt: `${civilDate}T12:00:00Z`,
-        utcOffsetSeconds: -18000,
-        beatsPerMinute: 70,
-        sourceFields: {},
-      },
-    ]);
-    await writer.upsertCalorieIntervals(sourceAccountId, [
-      {
-        providerKey: `active-${civilDate}`,
-        civilDate,
-        metricType: 'active',
-        startTime: `${civilDate}T12:00:00Z`,
-        endTime: `${civilDate}T13:00:00Z`,
-        utcOffsetSeconds: -18000,
-        kilocalories: 20,
-        sourceFields: {},
-      },
-    ]);
-    await writer.recalculateDaily(sourceAccountId, civilDate);
-  }
-  await pool.query(
-    `INSERT INTO sleep_sessions (
-      id, source_account_id, provider_key, civil_date, start_time, end_time,
-      duration_seconds, sleep_type, is_nap
-    ) VALUES (
-      'c754ab9b-0a67-4edb-bb36-62f973b36036', $1, 'old-sleep', '2026-01-01',
-      '2026-01-01T03:00:00Z', '2026-01-01T11:00:00Z', 28800,
-      'stages', false
-    )`,
-    [sourceAccountId],
-  );
-
-  assert.deepEqual(await writer.pruneRawMetricsBefore(sourceAccountId, '2026-04-19'), {
-    heartRateSamples: 0,
-    calorieIntervals: 0,
-  });
-  await pool.query(
-    `INSERT INTO health_archive_catalog (
-      id, source_account_id, archive_month, archive_version, is_active, state,
-      heart_sample_count, calorie_interval_count, verified_at
-    ) VALUES
-      (
-        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', $1, '2026-01-01', 1, true, 'verified',
-        1, 1, CURRENT_TIMESTAMP
-      ),
-      (
-        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', $1, '2026-04-01', 1, true, 'verified',
-        2, 2, CURRENT_TIMESTAMP
-      )`,
-    [sourceAccountId],
-  );
-  const removed = await writer.pruneRawMetricsBefore(sourceAccountId, '2026-04-19');
-  await writer.recalculateDaily(sourceAccountId, '2026-01-01');
-  const counts = {};
-  for (const table of [
-    'heart_rate_samples',
-    'calorie_intervals',
-    'heart_rate_daily_summaries',
-    'calorie_daily_summaries',
-    'sleep_sessions',
-  ]) {
-    counts[table] = Number((await pool.query(`SELECT COUNT(*) AS count FROM ${table}`)).rows[0].count);
-  }
-
-  assert.deepEqual(removed, { heartRateSamples: 1, calorieIntervals: 1 });
-  const retainedHeart = (
-    await pool.query(
-      `SELECT average_bpm, sample_count FROM heart_rate_daily_summaries
-       WHERE source_account_id = $1 AND civil_date = '2026-01-01'`,
-      [sourceAccountId],
-    )
-  ).rows[0];
-  assert.equal(Number(retainedHeart.average_bpm), 70);
-  assert.equal(Number(retainedHeart.sample_count), 1);
-  assert.deepEqual(counts, {
-    heart_rate_samples: 3,
-    calorie_intervals: 3,
-    heart_rate_daily_summaries: 4,
-    calorie_daily_summaries: 4,
-    sleep_sessions: 1,
-  });
+  assert.equal(writer.pruneRawMetricsBefore, undefined);
   await pool.end();
 });

@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import pg from 'pg';
 
+import { ARCHIVE_SCHEMAS } from '../lib/archive/bundle.js';
+import { encodeCsvRow } from '../lib/archive/csv.js';
 import { createHealthArchiveRepository } from '../lib/archive/repository.js';
 import { runCompactHealthOperation } from '../lib/db/compact-backfill.js';
 import { createCompactMetricWriter } from '../lib/db/compact-metric-writer.js';
@@ -47,6 +52,7 @@ test('PostgreSQL verified-month pruning deletes compact rows in bounded authoriz
   const quotedSchema = quoteIntegrationSchema(schema);
   let client;
   let schemaWasCreated = false;
+  let archiveDirectory;
 
   try {
     await pool.query(`CREATE SCHEMA ${quotedSchema}`);
@@ -89,8 +95,25 @@ test('PostgreSQL verified-month pruning deletes compact rows in bounded authoriz
       [catalogId, accountId],
     );
 
+    archiveDirectory = await mkdtemp(path.join(tmpdir(), 'health-prune-integration-'));
+    await writeFile(
+      path.join(archiveDirectory, 'heart-rate-samples.csv'),
+      [
+        ARCHIVE_SCHEMAS['heart-rate-samples.csv'],
+        [streamId, '2026-01-02', '2026-01-02T12:00:00.000Z', '\\N', '70', '\\N'],
+      ].map(encodeCsvRow).join(''),
+    );
+    await writeFile(
+      path.join(archiveDirectory, 'calorie-intervals.csv'),
+      [
+        ARCHIVE_SCHEMAS['calorie-intervals.csv'],
+        [streamId, '2026-01-02', 'active', '2026-01-02T12:00:00.000Z',
+          '2026-01-02T12:05:00.000Z', '\\N', '0', '\\N'],
+      ].map(encodeCsvRow).join(''),
+    );
+
     const removed = await createHealthArchiveRepository(client)
-      .pruneVerifiedMonth(catalogId, { batchSize: 1 });
+      .pruneVerifiedMonth(catalogId, { batchSize: 1, archiveDirectory });
 
     assert.equal(removed.compactHeartRateSamples, 1);
     assert.equal(removed.compactCalorieIntervals, 1);
@@ -103,6 +126,7 @@ test('PostgreSQL verified-month pruning deletes compact rows in bounded authoriz
       'pruned',
     );
   } finally {
+    if (archiveDirectory) await rm(archiveDirectory, { recursive: true, force: true });
     client?.release();
     if (schemaWasCreated) await pool.query(`DROP SCHEMA ${quotedSchema} CASCADE`);
     await pool.end();

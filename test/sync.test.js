@@ -752,7 +752,7 @@ test('raw retention alone never authorizes deletion', async () => {
   await pool.end();
 });
 
-test('explicit raw pruning runs only after every chunk completes', async () => {
+test('sync completion never invokes raw deletion even when legacy retention flags are supplied', async () => {
   const pool = await createDatabase();
   const repository = createSyncRepository(pool, { advisoryLocks: false });
   const baseWriter = createMetricWriter(pool);
@@ -784,7 +784,7 @@ test('explicit raw pruning runs only after every chunk completes', async () => {
   await service.runOnce();
   assert.equal(prunes.length, 0);
   await service.runOnce();
-  assert.deepEqual(prunes.map(({ cutoffDate }) => cutoffDate), ['2026-04-19']);
+  assert.equal(prunes.length, 0);
   await pool.end();
 });
 

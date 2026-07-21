@@ -254,11 +254,11 @@ Mutations validate browser origin, login attempts are throttled, health response
 `Cache-Control: no-store`, logs omit payloads/secrets, and restrictive CSP/permission headers are
 enabled.
 
-`RAW_RETENTION_DAYS` only defines a retention cutoff; it cannot authorize deletion. Raw deletion
-also requires `HEALTH_RAW_PRUNING_ENABLED=true`, a completely successful sync job, and an active
-verified archive-catalog row covering each deleted month. Unarchived rows are never pruned. Keep
-both compact writes and pruning disabled until operator validation succeeds. Sleep, journals, and
-daily summaries remain permanent.
+`RAW_RETENTION_DAYS` only limits high-volume raw metric ranges requested by backfill/custom sync;
+sync completion never deletes rows. The only raw deletion path is the explicit archive operator
+command below. It requires both archive/pruning gates, freshly downloads and fully verifies the
+stored object, stages the authenticated CSV values, and deletes only exact matching compact rows
+in bounded batches. Legacy raw tables, sleep, journals, and daily summaries remain permanent.
 
 ### Compact health operator
 
@@ -321,8 +321,11 @@ health data is retained outside an explicit extraction directory; verification a
 controlled temporary files that are removed on success or failure.
 
 ```bash
-# Catalog only; no R2 configuration is needed.
-npm run health:archive -- list
+# Catalog only; no R2 configuration is needed. Results default to 50 and never exceed 100.
+npm run health:archive -- list --limit 50
+
+# Continue a catalog page with the opaque nextCursor returned by the previous command.
+npm run health:archive -- list --limit 50 --cursor <nextCursor>
 
 # Eligibility-only dry run; no network operation or catalog mutation.
 npm run health:archive -- run --source-account <uuid> --month 2026-01-01
@@ -340,7 +343,7 @@ npm run health:archive -- extract --id <catalog-uuid> --output ./restore/2026-01
 npm run health:archive -- import --id <catalog-uuid> \
   --target-database-url postgres://restore:password@127.0.0.1:5432/health_hub_restore_test
 
-# Destructive raw pruning needs this explicit command plus both
+# Destructive compact-row pruning needs this explicit command plus both
 # HEALTH_ARCHIVE_ENABLED=true and HEALTH_RAW_PRUNING_ENABLED=true.
 npm run health:archive -- run --source-account <uuid> --month 2026-01-01 --execute --prune
 ```

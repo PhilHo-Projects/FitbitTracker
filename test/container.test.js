@@ -21,9 +21,9 @@ test('production container applies migrations before starting and includes migra
   assert.match(dockerignore, /^output$/m);
   assert.match(server, /SYNC_INTERVAL_HOURS/);
   assert.match(server, /SYNC_SCHEDULE_LOOKBACK_DAYS/);
-  assert.match(server, /RAW_RETENTION_DAYS/);
   assert.match(server, /HEALTH_COMPACT_WRITES_ENABLED === 'true'/);
-  assert.match(server, /HEALTH_RAW_PRUNING_ENABLED === 'true'/);
+  assert.match(server, /RAW_RETENTION_DAYS/);
+  assert.doesNotMatch(server, /rawPruningEnabled:/);
   assert.match(server, /archiveConfig\.enabled/);
   assert.match(server, /archiveWorker\?\.start\(\)/);
   assert.match(server, /archiveWorker\?\.stop\(\)/);

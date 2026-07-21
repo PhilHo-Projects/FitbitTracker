@@ -5,7 +5,11 @@ import test from 'node:test';
 import { parseHealthArchiveArgs } from '../lib/archive/operator.js';
 
 test('health archive operator exposes safe list, verify, extract, import, and run commands', async () => {
-  assert.deepEqual(parseHealthArchiveArgs(['list']), { command: 'list' });
+  assert.deepEqual(parseHealthArchiveArgs(['list']), { command: 'list', limit: 50 });
+  assert.deepEqual(parseHealthArchiveArgs(['list', '--limit=25', '--cursor', 'opaque']), {
+    command: 'list', limit: 25, cursor: 'opaque',
+  });
+  assert.throws(() => parseHealthArchiveArgs(['list', '--limit', '101']), /between 1 and 100/);
   assert.deepEqual(parseHealthArchiveArgs(['verify', '--id', 'catalog-id']), {
     command: 'verify', id: 'catalog-id',
   });

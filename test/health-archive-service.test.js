@@ -55,8 +55,17 @@ function repositoryFor(initial) {
     async markUploaded() { events.push('uploaded'); current = { ...current, state: 'uploaded' }; return current; },
     async markVerified() { events.push('verified'); current = { ...current, state: 'verified' }; return current; },
     async recordFailure(_id, failure) { events.push(['failed', failure]); current = { ...current, state: 'failed' }; },
-    async pruneVerifiedMonth() { events.push('pruned'); current = { ...current, state: 'pruned' }; return { heartRateSamples: 2, calorieIntervals: 1 }; },
-    async list() { return [current]; },
+    async recordVerificationFailure(_id, failure) {
+      events.push(['verification-failed', failure]);
+      if (current.state !== 'pruned') current = { ...current, state: 'failed' };
+      return current;
+    },
+    async pruneVerifiedMonth(_id, options) {
+      events.push(['pruned', options.archiveDirectory]);
+      current = { ...current, state: 'pruned' };
+      return { compactHeartRateSamples: 2, compactCalorieIntervals: 1 };
+    },
+    async list() { return { items: [current], nextCursor: null }; },
     async getById() { return current; },
   };
 }
@@ -93,7 +102,13 @@ function serviceFor(repository, overrides = {}) {
       objectStore: {
         async uploadCreateOnly() { calls.push('upload'); return { created: true }; },
       },
-      async verifyStoredArchive() { calls.push('verify'); return { valid: true }; },
+      async verifyStoredArchive(options) {
+        calls.push('verify');
+        if (options.withValidatedArchive) {
+          return options.withValidatedArchive({ directory: 'verified-files', valid: true });
+        }
+        return { valid: true };
+      },
       ...overrides,
     }),
   };
@@ -185,7 +200,26 @@ test('actual pruning needs both explicit archive and pruning gates and runs only
   });
   const result = await service.archiveMonth({ sourceAccountId, archiveMonth, prune: true });
   assert.equal(result.catalog.state, 'pruned');
-  assert.ok(enabledRepository.events.indexOf('pruned') > enabledRepository.events.indexOf('verified'));
+  assert.deepEqual(enabledRepository.events, [
+    'reserve', 'building', 'built', 'uploaded', 'verified', ['pruned', 'verified-files'],
+  ]);
+});
+
+test('pruning an already verified month always performs a fresh scoped object verification', async () => {
+  const repository = repositoryFor(catalog('verified'));
+  const { service, calls } = serviceFor(repository, {
+    config: {
+      enabled: true,
+      pruningEnabled: true,
+      currentKeyVersion: 1,
+      encryptionKeys: new Map([[1, Buffer.alloc(32, 1)]]),
+    },
+  });
+
+  await service.archiveMonth({ sourceAccountId, archiveMonth, prune: true });
+
+  assert.deepEqual(calls, ['verify']);
+  assert.deepEqual(repository.events, ['reserve', ['pruned', 'verified-files']]);
 });
 
 test('dry run and ineligible months neither reserve a catalog row nor use object storage', async () => {
@@ -236,8 +270,49 @@ test('explicit readback verification records failure and blocks a previously ver
 
   await assert.rejects(service.verifyById(repository.current.id), /Health archive verify failed/);
   assert.equal(repository.current.state, 'failed');
-  assert.deepEqual(repository.events.at(-1), ['failed', {
+  assert.deepEqual(repository.events.at(-1), ['verification-failed', {
     errorCode: 'ARCHIVE_VERIFY_FAILED',
     errorMessage: 'Health archive verify failed',
   }]);
+});
+
+test('explicit verification failure preserves a pruned catalog state and safe error', async () => {
+  const repository = repositoryFor(catalog('pruned'));
+  const { service } = serviceFor(repository, {
+    async verifyStoredArchive() { throw new Error('tampered object'); },
+  });
+
+  await assert.rejects(service.verifyById(repository.current.id), (error) => {
+    assert.equal(error.code, 'ARCHIVE_VERIFY_FAILED');
+    assert.equal(error.message, 'Health archive verify failed');
+    return true;
+  });
+  assert.equal(repository.current.state, 'pruned');
+  assert.deepEqual(repository.events.at(-1), ['verification-failed', {
+    errorCode: 'ARCHIVE_VERIFY_FAILED',
+    errorMessage: 'Health archive verify failed',
+  }]);
+});
+
+test('a repeated prune request freshly verifies and preserves a pruned state on failure', async () => {
+  const repository = repositoryFor(catalog('pruned'));
+  const { service } = serviceFor(repository, {
+    config: {
+      enabled: true,
+      pruningEnabled: true,
+      currentKeyVersion: 1,
+      encryptionKeys: new Map([[1, Buffer.alloc(32, 1)]]),
+    },
+    async verifyStoredArchive() { throw new Error('tampered object'); },
+  });
+
+  await assert.rejects(
+    service.archiveMonth({ sourceAccountId, archiveMonth, prune: true }),
+    /Health archive verify failed/,
+  );
+  assert.equal(repository.current.state, 'pruned');
+  assert.deepEqual(repository.events, ['reserve', ['verification-failed', {
+    errorCode: 'ARCHIVE_VERIFY_FAILED',
+    errorMessage: 'Health archive verify failed',
+  }]]);
 });

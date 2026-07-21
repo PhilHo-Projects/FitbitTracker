@@ -275,7 +275,6 @@ if (isDirectRun) {
             compactWritesEnabled: process.env.HEALTH_COMPACT_WRITES_ENABLED === 'true',
           }),
           rawRetentionDays: positiveNumber(process.env.RAW_RETENTION_DAYS, null),
-          rawPruningEnabled: process.env.HEALTH_RAW_PRUNING_ENABLED === 'true',
         })
       : null;
   const exportService = pool
