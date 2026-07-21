@@ -217,3 +217,24 @@ test('metric writer does not reconnect or release a caller-owned client', async 
   assert.match(queries[1], /INSERT INTO heart_rate_samples/);
   assert.equal(queries.at(-1), 'COMMIT');
 });
+
+test('daily recalculation serializes queries on a caller-owned client', async () => {
+  const queries = [];
+  let queryInFlight = false;
+  const transactionClient = {
+    async query(sql) {
+      if (queryInFlight) throw new Error('borrowed client received overlapping queries');
+      queryInFlight = true;
+      queries.push(sql);
+      await new Promise((resolve) => setImmediate(resolve));
+      queryInFlight = false;
+      return { rows: [], rowCount: 0 };
+    },
+  };
+  const writer = createMetricWriter(transactionClient, { clientOwnedByCaller: true });
+
+  await writer.recalculateDaily(accountId, '2026-11-01');
+
+  assert.equal(queries.filter((sql) => sql.includes('SELECT * FROM')).length, 3);
+  assert.match(queries.at(-1), /INSERT INTO daily_health_summaries/);
+});
