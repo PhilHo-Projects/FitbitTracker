@@ -306,6 +306,30 @@ test('verification failure metadata preserves an already pruned catalog state', 
   }
 });
 
+test('verification failure metadata preserves a superseded catalog state', async () => {
+  const pool = await createDatabase();
+  const repository = createHealthArchiveRepository(pool);
+  try {
+    await pool.query(
+      `INSERT INTO health_archive_catalog
+        (id, source_account_id, archive_month, archive_version, is_active, state, verified_at)
+       VALUES ('cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd', $1, '2026-01-01', 1,
+               false, 'superseded', CURRENT_TIMESTAMP)`,
+      [sourceAccountId],
+    );
+    const row = await repository.recordVerificationFailure(
+      'cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd',
+      { errorCode: 'ARCHIVE_VERIFY_FAILED', errorMessage: 'Health archive verify failed' },
+    );
+    assert.equal(row.state, 'superseded');
+    assert.equal(row.is_active, false);
+    assert.equal(row.error_code, 'ARCHIVE_VERIFY_FAILED');
+    assert.equal(row.error_message, 'Health archive verify failed');
+  } finally {
+    await pool.end();
+  }
+});
+
 test('successful re-verification safely restores failed active rows and preserves terminal states', async () => {
   const pool = await createDatabase();
   const repository = createHealthArchiveRepository(pool);

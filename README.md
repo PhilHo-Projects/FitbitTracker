@@ -343,7 +343,8 @@ npm run health:archive -- verify --id <catalog-uuid>
 
 # After a prune mismatch, explicitly supersede the active verified catalog entry and build a new
 # immutable version. The prior catalog row/object remains retained; this cannot be combined with
-# --prune and never happens during automatic worker retries.
+# --prune and never happens during automatic worker retries. A retained, previously verified
+# superseded version remains available to verify, extract, or import by its old catalog ID.
 npm run health:archive -- run --source-account <uuid> --month 2026-01-01 --execute --rebuild
 
 # Retain decrypted files only in this explicit operator directory.
