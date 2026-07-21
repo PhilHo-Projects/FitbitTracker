@@ -219,6 +219,9 @@ are fixed-layout companions generated from SVG, not screenshots of the browser v
 
 See `.env.example`.
 
+The complete retention contract, R2/Coolify setup, approval gates, rollback paths, and quarterly
+restore drills are in [`docs/lifelong-health-archive-runbook.md`](docs/lifelong-health-archive-runbook.md).
+
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | PostgreSQL archive connection |

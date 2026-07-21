@@ -68,7 +68,7 @@ export function createApp(options = {}) {
     options.healthRepository ?? (pool
       ? createHealthRepository(pool, {
           archiveConfigured: env.HEALTH_ARCHIVE_ENABLED === 'true',
-          archivePruningEnabled: env.HEALTH_ARCHIVE_PRUNING_ENABLED === 'true',
+          archivePruningEnabled: env.HEALTH_RAW_PRUNING_ENABLED === 'true',
           retentionDays: positiveNumber(env.RAW_RETENTION_DAYS, 90),
           now,
         })
@@ -292,7 +292,7 @@ if (isDirectRun) {
           journalRepository,
           availabilityOptions: {
             archiveConfigured: process.env.HEALTH_ARCHIVE_ENABLED === 'true',
-            archivePruningEnabled: process.env.HEALTH_ARCHIVE_PRUNING_ENABLED === 'true',
+            archivePruningEnabled: process.env.HEALTH_RAW_PRUNING_ENABLED === 'true',
             retentionDays: positiveNumber(process.env.RAW_RETENTION_DAYS, 90),
           },
         }),
