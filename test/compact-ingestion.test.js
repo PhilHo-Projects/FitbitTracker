@@ -189,3 +189,20 @@ test('legacy writes remain active while compact dual writes default off and requ
   assert.deepEqual(disabledResult, { inserted: 0, updated: 0, unchanged: 0, skipped: 1 });
   assert.deepEqual(enabledResult, { inserted: 1, updated: 0, unchanged: 0 });
 });
+
+test('metric writer stays on a supplied query-only transaction context', async () => {
+  const queries = [];
+  const transactionClient = {
+    async query(sql) {
+      queries.push(sql);
+      return { rows: [], rowCount: 0 };
+    },
+  };
+  const writer = createMetricWriter(transactionClient);
+
+  await writer.upsertHeartSamples(accountId, [heartSample({ providerKey: 'transaction-heart' })]);
+
+  assert.equal(queries[0], 'BEGIN');
+  assert.match(queries[1], /INSERT INTO heart_rate_samples/);
+  assert.equal(queries.at(-1), 'COMMIT');
+});

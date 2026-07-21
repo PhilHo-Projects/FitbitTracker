@@ -191,20 +191,22 @@ test('PostgreSQL compact writes are set-based no-ops for identical rows and upda
   const pool = new pg.Pool({ connectionString: integrationUrl });
   const schema = createIntegrationSchemaName();
   const quotedSchema = quoteIntegrationSchema(schema);
+  let client;
   let schemaWasCreated = false;
 
   try {
     await pool.query(`CREATE SCHEMA ${quotedSchema}`);
     schemaWasCreated = true;
     await applyMigrations(pool, { schema });
-    await pool.query(`SET search_path TO ${quotedSchema}`);
+    client = await pool.connect();
+    await client.query(`SET search_path TO ${quotedSchema}`);
     const accountId = '11111111-1111-1111-1111-111111111111';
-    await pool.query(
+    await client.query(
       `INSERT INTO source_accounts (id, provider, provider_account_id)
        VALUES ($1, 'google-health', 'compact-integration')`,
       [accountId],
     );
-    const writer = createCompactMetricWriter(pool);
+    const writer = createCompactMetricWriter(client);
     const watch = {
       civilDate: '2026-11-01',
       sampledAt: '2026-11-01T05:30:00Z',
@@ -236,7 +238,7 @@ test('PostgreSQL compact writes are set-based no-ops for identical rows and upda
       updated: 0,
       unchanged: 0,
     });
-    const before = await pool.query(
+    const before = await client.query(
       `SELECT heart.source_stream_id, heart.sampled_at, heart.xmin::text AS xmin, stream.metadata
        FROM heart_rate_samples_compact AS heart
        JOIN source_streams AS stream ON stream.id = heart.source_stream_id
@@ -247,7 +249,7 @@ test('PostgreSQL compact writes are set-based no-ops for identical rows and upda
       updated: 0,
       unchanged: 3,
     });
-    const unchanged = await pool.query(
+    const unchanged = await client.query(
       `SELECT heart.source_stream_id, heart.sampled_at, heart.xmin::text AS xmin, stream.metadata
        FROM heart_rate_samples_compact AS heart
        JOIN source_streams AS stream ON stream.id = heart.source_stream_id
@@ -264,7 +266,7 @@ test('PostgreSQL compact writes are set-based no-ops for identical rows and upda
         metadata.dataSource.device.model === 'Watch' &&
         sampledAt.toISOString() === '2026-11-01T05:30:00.000Z',
     );
-    const corrected = await pool.query(
+    const corrected = await client.query(
       `SELECT beats_per_minute, xmin::text AS xmin
        FROM heart_rate_samples_compact
        WHERE source_stream_id = $1 AND sampled_at = $2`,
@@ -293,10 +295,10 @@ test('PostgreSQL compact writes are set-based no-ops for identical rows and upda
       updated: 0,
       unchanged: 0,
     });
-    const zero = await pool.query('SELECT kilocalories FROM calorie_intervals_compact');
+    const zero = await client.query('SELECT kilocalories FROM calorie_intervals_compact');
     assert.equal(Number(zero.rows[0].kilocalories), 0);
 
-    const legacyWriter = createMetricWriter(pool);
+    const legacyWriter = createMetricWriter(client);
     await legacyWriter.upsertHeartSamples(accountId, [
       { ...watch, providerKey: 'legacy-watch', beatsPerMinute: 64 },
       { ...watchNextDay, providerKey: 'legacy-watch-next-day' },
@@ -307,11 +309,12 @@ test('PostgreSQL compact writes are set-based no-ops for identical rows and upda
     ]);
     await legacyWriter.recalculateDaily(accountId, '2026-11-01');
     await legacyWriter.recalculateDaily(accountId, '2026-11-02');
-    assert.deepEqual(await runCompactHealthOperation({ pool, mode: 'validate' }), {
+    assert.deepEqual(await runCompactHealthOperation({ pool: client, mode: 'validate' }), {
       valid: true,
       mismatches: { heart: [], calories: [] },
     });
   } finally {
+    client?.release();
     if (schemaWasCreated) await pool.query(`DROP SCHEMA ${quotedSchema} CASCADE`);
     await pool.end();
   }
