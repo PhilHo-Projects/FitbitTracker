@@ -5,6 +5,7 @@ import {
   dateRangeForPreset,
   exportPollingNeeded,
   formatDuration,
+  heartDetailNotice,
   isLocalDevelopmentHost,
   scaleSleepTrendRows,
   sleepStageBreakdown,
@@ -402,11 +403,12 @@ async function loadHeartWorkspace() {
   const resolution = preset === 'day' ? 'five-minute' : 'day';
   try {
     const data = await fetchJson(`/api/metrics/heart?start=${range.startDate}&end=${range.endDateExclusive}&resolution=${resolution}`);
-    const summary = preset === 'day' ? data.summary : data.days.at(-1);
-    const points = preset === 'day' ? data.points : data.days;
+    const summary = preset === 'day' ? data.summary : data.periodSummary;
+    const points = preset === 'day' && data.resolution === 'five-minute' ? data.points : data.days;
+    const detailNotice = heartDetailNotice(data);
     root.innerHTML = `
       <section class="workspace-summary">
-        <div><span>Resting heart rate</span><strong>${numeric(summary?.restingBpm, ' bpm')}</strong></div>
+        <div><span>Resting heart rate</span><strong>${numeric(summary?.restingBpm ?? summary?.averageDailyRestingBpm, ' bpm')}</strong></div>
         <dl>
           <div><dt>Average</dt><dd>${numeric(summary?.averageBpm, ' bpm')}</dd></div>
           <div><dt>Minimum</dt><dd>${numeric(summary?.minimumBpm, ' bpm')}</dd></div>
@@ -417,7 +419,8 @@ async function loadHeartWorkspace() {
       </section>
       <section class="workspace-panel">
         <div class="section-title"><div><h2>${preset === 'day' ? 'Five-minute readings' : 'Daily resting and range'}</h2><p>Vertical marks show min–max; dots show averages. Missing time remains blank.</p></div></div>
-        ${rangePlot(points, preset === 'day')}
+        ${detailNotice ? `<p class="workspace-empty">${escapeHtml(detailNotice)}</p>` : ''}
+        ${rangePlot(points, preset === 'day' && data.resolution === 'five-minute')}
       </section>`;
   } catch (error) {
     root.innerHTML = `<div class="workspace-empty error-copy">${escapeHtml(error.message)}</div>`;

@@ -65,7 +65,14 @@ export function createApp(options = {}) {
   } = options;
   const pool = options.pool === undefined ? createPool(env) : options.pool;
   const healthRepository =
-    options.healthRepository ?? (pool ? createHealthRepository(pool) : null);
+    options.healthRepository ?? (pool
+      ? createHealthRepository(pool, {
+          archiveConfigured: env.HEALTH_ARCHIVE_ENABLED === 'true',
+          archivePruningEnabled: env.HEALTH_ARCHIVE_PRUNING_ENABLED === 'true',
+          retentionDays: positiveNumber(env.RAW_RETENTION_DAYS, 90),
+          now,
+        })
+      : null);
   let journalRepository = options.journalRepository ?? null;
   if (!journalRepository && pool && env.JOURNAL_ENCRYPTION_KEYS) {
     journalRepository = createJournalRepository(
@@ -280,7 +287,15 @@ if (isDirectRun) {
   const exportService = pool
     ? createExportService({
         pool,
-        datasetService: createAnalysisDatasetService({ pool, journalRepository }),
+        datasetService: createAnalysisDatasetService({
+          pool,
+          journalRepository,
+          availabilityOptions: {
+            archiveConfigured: process.env.HEALTH_ARCHIVE_ENABLED === 'true',
+            archivePruningEnabled: process.env.HEALTH_ARCHIVE_PRUNING_ENABLED === 'true',
+            retentionDays: positiveNumber(process.env.RAW_RETENTION_DAYS, 90),
+          },
+        }),
         storageDirectory:
           process.env.EXPORT_STORAGE_DIR || path.join(__dirname, '.runtime', 'exports'),
         })

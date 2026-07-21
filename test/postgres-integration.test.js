@@ -14,6 +14,8 @@ import { runCompactHealthOperation } from '../lib/db/compact-backfill.js';
 import { createCompactMetricWriter } from '../lib/db/compact-metric-writer.js';
 import { applyMigrations } from '../lib/db/migrations.js';
 import { createMetricWriter } from '../lib/db/metric-writer.js';
+import { createHealthRepository } from '../lib/db/health-repository.js';
+import { createAnalysisDatasetService } from '../lib/exports/dataset.js';
 import { createSyncRepository } from '../lib/jobs/sync-repository.js';
 import { createSyncService } from '../lib/jobs/sync-service.js';
 
@@ -44,6 +46,87 @@ test('PostgreSQL integration harness uses only a generated isolated schema', () 
   assert.throws(() => quoteIntegrationSchema('public'), /must be generated/);
   assert.equal(integrationSchemaToDrop(schema, false), null);
   assert.equal(integrationSchemaToDrop(schema, true), `"${schema}"`);
+});
+
+test('PostgreSQL health availability and raw export cursors preserve canonical dates and microseconds', { skip: !integrationUrl }, async () => {
+  const pool = new pg.Pool({ connectionString: integrationUrl });
+  const schema = createIntegrationSchemaName();
+  const quotedSchema = quoteIntegrationSchema(schema);
+  let client;
+  let schemaWasCreated = false;
+  try {
+    await pool.query(`CREATE SCHEMA ${quotedSchema}`);
+    schemaWasCreated = true;
+    await applyMigrations(pool, { schema });
+    client = await pool.connect();
+    await client.query(`SET search_path TO ${quotedSchema}`);
+    const accountId = '41111111-1111-4111-8111-111111111111';
+    await client.query(
+      `INSERT INTO source_accounts (id, provider, provider_account_id, timezone)
+       VALUES ($1, 'archive-test', 'availability-integration', 'Europe/Helsinki')`,
+      [accountId],
+    );
+    for (const [index, timestamp] of [
+      '2026-07-16T12:00:00.000123Z',
+      '2026-07-16T12:00:00.000456Z',
+      '2026-07-16T12:00:00.000789Z',
+    ].entries()) {
+      await client.query(
+        `INSERT INTO heart_rate_samples (
+           id, source_account_id, provider_key, civil_date, sampled_at, beats_per_minute
+         ) VALUES ($1, $2, $3, '2026-07-16', $4, $5)`,
+        [`42222222-2222-4222-8222-22222222222${index}`, accountId, `heart-${index}`, timestamp, 60 + index],
+      );
+    }
+    await client.query(
+      `INSERT INTO heart_rate_daily_summaries (
+         id, source_account_id, civil_date, resting_bpm, average_bpm, minimum_bpm,
+         maximum_bpm, sample_count, coverage_seconds, bpm_sum, bpm_sum_of_squares,
+         population_standard_deviation_bpm, p05_bpm, median_bpm, p95_bpm,
+         aggregation_version, finalized_at
+       ) VALUES ($1, $2, '2026-07-16', 58, 61, 60, 62, 3, 900, 183, 11165,
+                 0.82, 60, 61, 62, 1, '2026-07-17T00:00:00.000987Z')`,
+      ['43333333-3333-4333-8333-333333333333', accountId],
+    );
+    await client.query(
+      `INSERT INTO health_archive_catalog (
+         id, source_account_id, archive_month, archive_version, is_active, state,
+         heart_sample_count, calorie_interval_count, verified_at
+       ) VALUES ($1, $2, '2026-01-01', 1, true, 'verified', 30, 0,
+                 '2026-04-25T03:00:00.000654Z')`,
+      ['44444444-4444-4444-8444-444444444444', accountId],
+    );
+
+    const dataset = createAnalysisDatasetService({ pool: client, batchSize: 2 });
+    const streamed = [];
+    for await (const row of await dataset.streamHeartRateSamples({
+      startDate: '2026-07-16',
+      endDateExclusive: '2026-07-17',
+    })) streamed.push(row);
+    assert.deepEqual(streamed.map(({ civilDate, sampledAt }) => ({ civilDate, sampledAt })), [
+      { civilDate: '2026-07-16', sampledAt: '2026-07-16T12:00:00.000123Z' },
+      { civilDate: '2026-07-16', sampledAt: '2026-07-16T12:00:00.000456Z' },
+      { civilDate: '2026-07-16', sampledAt: '2026-07-16T12:00:00.000789Z' },
+    ]);
+
+    const repository = createHealthRepository(client, {
+      archiveConfigured: true,
+      retentionDays: 90,
+      now: () => Date.parse('2026-07-21T12:00:00Z'),
+    });
+    const heart = await repository.getHeartRange('2026-07-16', '2026-07-17', 'day');
+    const status = await repository.getArchiveStatus();
+    assert.equal(heart.days[0].date, '2026-07-16');
+    assert.equal(heart.days[0].finalizedAt, '2026-07-17T00:00:00.000Z');
+    assert.equal(heart.rawAvailability.retainedFrom, '2026-07-16');
+    assert.equal(heart.periodSummary.sampleCount, 3);
+    assert.equal(status.lastVerifiedMonth, '2026-01-01');
+    assert.equal(status.catalog[0].month, '2026-01-01');
+  } finally {
+    client?.release();
+    if (schemaWasCreated) await pool.query(`DROP SCHEMA ${quotedSchema} CASCADE`);
+    await pool.end();
+  }
 });
 
 test('PostgreSQL verified-month pruning deletes compact rows in bounded authorized batches', { skip: !integrationUrl }, async () => {

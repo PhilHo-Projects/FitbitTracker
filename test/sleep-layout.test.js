@@ -101,7 +101,7 @@ test('Sleep, Heart, and Calories workspace summaries use one shared white-stat s
   assert.doesNotMatch(css, /\.sleep-workspace-summary dd\s*\{[^}]*font-size:/s);
   assert.match(
     app,
-    /<div><span>Resting heart rate<\/span><strong>\$\{numeric\(summary\?\.restingBpm, ' bpm'\)\}<\/strong><\/div>/,
+    /<div><span>Resting heart rate<\/span><strong>\$\{numeric\(summary\?\.restingBpm \?\? summary\?\.averageDailyRestingBpm, ' bpm'\)\}<\/strong><\/div>/,
   );
   assert.match(
     app,

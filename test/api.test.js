@@ -38,6 +38,13 @@ function services() {
         resolution,
         days: [],
       }),
+      getArchiveStatus: async () => ({
+        configured: true,
+        pruningEnabled: false,
+        hotCutoff: '2026-04-01',
+        pendingMonths: [],
+        failedMonths: [],
+      }),
     },
     journalRepository: {
       list: async () => journalEntries,
@@ -104,11 +111,18 @@ test('authenticated health APIs expose dashboard and closed-open metric ranges',
       `${baseUrl}/api/metrics/heart?start=2026-07-10&end=2026-07-17&resolution=day`,
       { headers: { cookie } },
     );
+    const deniedArchiveStatus = await fetch(`${baseUrl}/api/archive/status`);
+    const archiveStatusResponse = await fetch(`${baseUrl}/api/archive/status`, {
+      headers: { cookie },
+    });
 
     assert.equal(dashboardResponse.status, 200);
     assert.deepEqual(await dashboardResponse.json(), { ok: true, data: dashboard });
     assert.equal(heartResponse.status, 200);
     assert.equal((await heartResponse.json()).data.endDateExclusive, '2026-07-17');
+    assert.equal(deniedArchiveStatus.status, 401);
+    assert.equal(archiveStatusResponse.status, 200);
+    assert.equal((await archiveStatusResponse.json()).data.configured, true);
     assert.match(dashboardResponse.headers.get('content-security-policy'), /default-src 'self'/);
     assert.equal(dashboardResponse.headers.get('cache-control'), 'no-store');
   });
