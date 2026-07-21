@@ -266,8 +266,11 @@ if (isDirectRun) {
             url: process.env.N8N_WEBHOOK_URL,
             token: process.env.N8N_WEBHOOK_TOKEN,
           }),
-          writer: createMetricWriter(pool),
+          writer: createMetricWriter(pool, {
+            compactWritesEnabled: process.env.HEALTH_COMPACT_WRITES_ENABLED === 'true',
+          }),
           rawRetentionDays: positiveNumber(process.env.RAW_RETENTION_DAYS, null),
+          rawPruningEnabled: process.env.HEALTH_RAW_PRUNING_ENABLED === 'true',
         })
       : null;
   const exportService = pool

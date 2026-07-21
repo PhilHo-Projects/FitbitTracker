@@ -232,7 +232,10 @@ See `.env.example`.
 | `SYNC_SCHEDULE_ENABLED` | No | Set `false` for manual-only sync; defaults to enabled |
 | `SYNC_INTERVAL_HOURS` | No | Scheduled sync interval; defaults to 3 hours |
 | `SYNC_SCHEDULE_LOOKBACK_DAYS` | No | Scheduled overlap window; defaults to 7 days |
-| `RAW_RETENTION_DAYS` | No | Retain raw heart/calorie rows for this many days; disabled when unset |
+| `RAW_RETENTION_DAYS` | No | Define the raw-retention cutoff only; does not authorize deletion |
+| `HEALTH_COMPACT_WRITES_ENABLED` | No | Dual-write compact normalized rows; defaults to `false` |
+| `HEALTH_RAW_PRUNING_ENABLED` | No | Allow verified-archive-only raw pruning; defaults to `false` |
+| `HEALTH_COMPACT_BACKFILL_BATCH_SIZE` | No | Maximum legacy rows per compact operator batch; defaults to 1000 |
 | `EXPORT_STORAGE_DIR` | No | Private temporary export directory |
 | `PORT` | No | Express port; defaults to 3000 |
 
@@ -241,11 +244,32 @@ Mutations validate browser origin, login attempts are throttled, health response
 `Cache-Control: no-store`, logs omit payloads/secrets, and restrictive CSP/permission headers are
 enabled.
 
-Production uses a 90-day raw-data window to bound disk usage. Raw heart-rate samples and calorie
-intervals are pruned only after an entire sync job succeeds; sleep, journals, and daily summaries
-remain permanent. Backfills keep full sleep and daily-resting-heart history while clamping raw
-metrics to the retained window. Local development leaves retention unset and never shares its
-PostgreSQL volume with production.
+`RAW_RETENTION_DAYS` only defines a retention cutoff; it cannot authorize deletion. Raw deletion
+also requires `HEALTH_RAW_PRUNING_ENABLED=true`, a completely successful sync job, and an active
+verified archive-catalog row covering each deleted month. Unarchived rows are never pruned. Keep
+both compact writes and pruning disabled until operator validation succeeds. Sleep, journals, and
+daily summaries remain permanent.
+
+### Compact health operator
+
+The compact operator is read-only by default. It never deletes legacy source rows and scans
+backfills in bounded keyset batches.
+
+```bash
+# Compare legacy, compact, and finalized heart summaries. This is the default operation.
+npm run health:compact -- --validate
+
+# Preflight all source rows and duplicate semantic identities without writing.
+npm run health:compact -- --backfill --batch-size 1000
+
+# Explicitly migrate source streams and compact rows, refresh affected daily summaries once,
+# then run validation.
+npm run health:compact -- --backfill --execute --batch-size 1000
+```
+
+Validation reports account/date differences in counts, timestamp bounds, sums, minima, maxima,
+coverage, and heart p05/median/p95. A duplicate legacy semantic identity aborts preflight before
+the first compact write. Configure the default bound with `HEALTH_COMPACT_BACKFILL_BATCH_SIZE`.
 
 ## Verification
 

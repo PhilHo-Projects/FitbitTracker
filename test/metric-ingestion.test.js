@@ -184,7 +184,17 @@ test('metric upserts are idempotent, accept corrections, and preserve zero-versu
   assert.deepEqual(heartRows.rows.map(({ beats_per_minute: bpm }) => Number(bpm)), [82, 72]);
   assert.equal(Number(heartDaily.sample_count), 2);
   assert.equal(Number(heartDaily.average_bpm), 77);
+  assert.equal(Number(heartDaily.minimum_bpm), 72);
+  assert.equal(Number(heartDaily.maximum_bpm), 82);
   assert.equal(Number(heartDaily.coverage_seconds), 600);
+  assert.equal(Number(heartDaily.bpm_sum), 154);
+  assert.equal(Number(heartDaily.bpm_sum_of_squares), 11908);
+  assert.equal(Number(heartDaily.population_standard_deviation_bpm), 5);
+  assert.equal(Number(heartDaily.p05_bpm), 72.5);
+  assert.equal(Number(heartDaily.median_bpm), 77);
+  assert.equal(Number(heartDaily.p95_bpm), 81.5);
+  assert.equal(Number(heartDaily.aggregation_version), 2);
+  assert.ok(heartDaily.finalized_at);
   assert.equal(Number(calories.active_kcal), 0);
   assert.equal(Number(calories.basal_kcal), 70);
   assert.equal(Number(calories.total_kcal), 70);
@@ -199,7 +209,7 @@ test('metric upserts are idempotent, accept corrections, and preserve zero-versu
   await pool.end();
 });
 
-test('raw retention removes expired samples while preserving summaries and sleep history', async () => {
+test('raw pruning refuses unarchived rows and removes only verified archive months', async () => {
   const pool = await createDatabase();
   const writer = createMetricWriter(pool);
   const sourceAccountId = '75ce6554-70c7-48be-a688-d0079384fcb1';
@@ -241,6 +251,20 @@ test('raw retention removes expired samples while preserving summaries and sleep
     [sourceAccountId],
   );
 
+  assert.deepEqual(await writer.pruneRawMetricsBefore(sourceAccountId, '2026-04-19'), {
+    heartRateSamples: 0,
+    calorieIntervals: 0,
+  });
+  await pool.query(
+    `INSERT INTO health_archive_catalog (
+      id, source_account_id, archive_month, archive_version, is_active, state,
+      heart_sample_count, calorie_interval_count, verified_at
+    ) VALUES (
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', $1, '2026-01-01', 1, true, 'verified',
+      1, 1, CURRENT_TIMESTAMP
+    )`,
+    [sourceAccountId],
+  );
   const removed = await writer.pruneRawMetricsBefore(sourceAccountId, '2026-04-19');
   await writer.recalculateDaily(sourceAccountId, '2026-01-01');
   const counts = {};

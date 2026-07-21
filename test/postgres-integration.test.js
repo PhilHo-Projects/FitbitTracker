@@ -4,7 +4,10 @@ import test from 'node:test';
 
 import pg from 'pg';
 
+import { runCompactHealthOperation } from '../lib/db/compact-backfill.js';
+import { createCompactMetricWriter } from '../lib/db/compact-metric-writer.js';
 import { applyMigrations } from '../lib/db/migrations.js';
+import { createMetricWriter } from '../lib/db/metric-writer.js';
 
 const integrationUrl = process.env.PG_INTEGRATION_URL;
 const integrationSchemaPrefix = 'health_archive_integration_';
@@ -180,6 +183,136 @@ test('PostgreSQL integration applies the lifelong archive schema and constraints
     client?.release();
     const schemaToDrop = integrationSchemaToDrop(schema, schemaWasCreated);
     if (schemaToDrop) await pool.query(`DROP SCHEMA ${schemaToDrop} CASCADE`);
+    await pool.end();
+  }
+});
+
+test('PostgreSQL compact writes are set-based no-ops for identical rows and update corrections once', { skip: !integrationUrl }, async () => {
+  const pool = new pg.Pool({ connectionString: integrationUrl });
+  const schema = createIntegrationSchemaName();
+  const quotedSchema = quoteIntegrationSchema(schema);
+  let schemaWasCreated = false;
+
+  try {
+    await pool.query(`CREATE SCHEMA ${quotedSchema}`);
+    schemaWasCreated = true;
+    await applyMigrations(pool, { schema });
+    await pool.query(`SET search_path TO ${quotedSchema}`);
+    const accountId = '11111111-1111-1111-1111-111111111111';
+    await pool.query(
+      `INSERT INTO source_accounts (id, provider, provider_account_id)
+       VALUES ($1, 'google-health', 'compact-integration')`,
+      [accountId],
+    );
+    const writer = createCompactMetricWriter(pool);
+    const watch = {
+      civilDate: '2026-11-01',
+      sampledAt: '2026-11-01T05:30:00Z',
+      utcOffsetSeconds: -14400,
+      beatsPerMinute: 61,
+      providerId: 'watch-sample',
+      device: { model: 'Watch' },
+      sourceFields: { dataSource: { device: { model: 'Watch' } } },
+      sourceMetadata: { dataType: 'heart-rate', dataSource: { device: { model: 'Watch' } } },
+    };
+    const ring = {
+      ...watch,
+      providerId: 'ring-sample',
+      device: { model: 'Ring' },
+      sourceFields: { dataSource: { device: { model: 'Ring' } } },
+      sourceMetadata: { dataSource: { device: { model: 'Ring' } }, dataType: 'heart-rate' },
+    };
+    const watchNextDay = {
+      ...watch,
+      civilDate: '2026-11-02',
+      sampledAt: '2026-11-02T06:30:00Z',
+      utcOffsetSeconds: -18000,
+      beatsPerMinute: 63,
+      providerId: 'watch-sample-next-day',
+    };
+
+    assert.deepEqual(await writer.upsertHeartSamples(accountId, [watch, watchNextDay, ring]), {
+      inserted: 3,
+      updated: 0,
+      unchanged: 0,
+    });
+    const before = await pool.query(
+      `SELECT heart.source_stream_id, heart.sampled_at, heart.xmin::text AS xmin, stream.metadata
+       FROM heart_rate_samples_compact AS heart
+       JOIN source_streams AS stream ON stream.id = heart.source_stream_id
+       ORDER BY heart.source_stream_id, heart.sampled_at`,
+    );
+    assert.deepEqual(await writer.upsertHeartSamples(accountId, [watch, watchNextDay, ring]), {
+      inserted: 0,
+      updated: 0,
+      unchanged: 3,
+    });
+    const unchanged = await pool.query(
+      `SELECT heart.source_stream_id, heart.sampled_at, heart.xmin::text AS xmin, stream.metadata
+       FROM heart_rate_samples_compact AS heart
+       JOIN source_streams AS stream ON stream.id = heart.source_stream_id
+       ORDER BY heart.source_stream_id, heart.sampled_at`,
+    );
+    assert.deepEqual(unchanged.rows, before.rows);
+
+    assert.deepEqual(
+      await writer.upsertHeartSamples(accountId, [{ ...watch, beatsPerMinute: 64 }]),
+      { inserted: 0, updated: 1, unchanged: 0 },
+    );
+    const watchBefore = before.rows.find(
+      ({ metadata, sampled_at: sampledAt }) =>
+        metadata.dataSource.device.model === 'Watch' &&
+        sampledAt.toISOString() === '2026-11-01T05:30:00.000Z',
+    );
+    const corrected = await pool.query(
+      `SELECT beats_per_minute, xmin::text AS xmin
+       FROM heart_rate_samples_compact
+       WHERE source_stream_id = $1 AND sampled_at = $2`,
+      [watchBefore.source_stream_id, watch.sampledAt],
+    );
+    assert.equal(Number(corrected.rows[0].beats_per_minute), 64);
+    assert.notEqual(corrected.rows[0].xmin, watchBefore.xmin);
+
+    const activeZero = {
+      civilDate: '2026-11-01',
+      metricType: 'active',
+      startTime: '2026-11-01T05:00:00Z',
+      endTime: '2026-11-01T06:00:00Z',
+      utcOffsetSeconds: -14400,
+      kilocalories: 0,
+      providerId: 'active-zero',
+      device: { model: 'Watch' },
+      sourceFields: { dataSource: { device: { model: 'Watch' } } },
+      sourceMetadata: {
+        dataType: 'active-energy-burned',
+        dataSource: { device: { model: 'Watch' } },
+      },
+    };
+    assert.deepEqual(await writer.upsertCalorieIntervals(accountId, [activeZero]), {
+      inserted: 1,
+      updated: 0,
+      unchanged: 0,
+    });
+    const zero = await pool.query('SELECT kilocalories FROM calorie_intervals_compact');
+    assert.equal(Number(zero.rows[0].kilocalories), 0);
+
+    const legacyWriter = createMetricWriter(pool);
+    await legacyWriter.upsertHeartSamples(accountId, [
+      { ...watch, providerKey: 'legacy-watch', beatsPerMinute: 64 },
+      { ...watchNextDay, providerKey: 'legacy-watch-next-day' },
+      { ...ring, providerKey: 'legacy-ring' },
+    ]);
+    await legacyWriter.upsertCalorieIntervals(accountId, [
+      { ...activeZero, providerKey: 'legacy-active-zero' },
+    ]);
+    await legacyWriter.recalculateDaily(accountId, '2026-11-01');
+    await legacyWriter.recalculateDaily(accountId, '2026-11-02');
+    assert.deepEqual(await runCompactHealthOperation({ pool, mode: 'validate' }), {
+      valid: true,
+      mismatches: { heart: [], calories: [] },
+    });
+  } finally {
+    if (schemaWasCreated) await pool.query(`DROP SCHEMA ${quotedSchema} CASCADE`);
     await pool.end();
   }
 });
