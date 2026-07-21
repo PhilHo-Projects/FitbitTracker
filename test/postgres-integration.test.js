@@ -76,7 +76,7 @@ test('PostgreSQL verified-month pruning deletes compact rows in bounded authoriz
     await client.query(
       `INSERT INTO heart_rate_samples_compact
          (source_account_id, source_stream_id, civil_date, sampled_at, beats_per_minute)
-       VALUES ($1, $2, '2026-01-02', '2026-01-02T12:00:00Z', 70)`,
+       VALUES ($1, $2, '2026-01-02', '2026-01-02T12:00:00.000123Z', 70)`,
       [accountId, streamId],
     );
     await client.query(
@@ -84,36 +84,49 @@ test('PostgreSQL verified-month pruning deletes compact rows in bounded authoriz
          (source_account_id, source_stream_id, civil_date, interval_type,
           start_at, end_at, kilocalories)
        VALUES ($1, $2, '2026-01-02', 'active',
-               '2026-01-02T12:00:00Z', '2026-01-02T12:05:00Z', 0)`,
+               '2026-01-02T12:00:00.000456Z', '2026-01-02T12:05:00.000789Z', 0)`,
       [accountId, streamId],
     );
     await client.query(
       `INSERT INTO health_archive_catalog
          (id, source_account_id, archive_month, archive_version, state,
-          heart_sample_count, calorie_interval_count, verified_at)
-       VALUES ($1, $2, '2026-01-01', 1, 'verified', 1, 1, CURRENT_TIMESTAMP)`,
-      [catalogId, accountId],
+          heart_sample_count, calorie_interval_count, measurement_started_at,
+          measurement_ended_at, object_key, ciphertext_hash, verified_at)
+       VALUES ($1, $2, '2026-01-01', 1, 'verified', 1, 1,
+               '2026-01-02T12:00:00.000123Z', '2026-01-02T12:05:00.000789Z',
+               'object-key', $3, '2026-01-03T01:02:03.000987Z')`,
+      [catalogId, accountId, 'a'.repeat(64)],
     );
+
+    const canonicalCatalog = await createHealthArchiveRepository(client).getById(catalogId);
+    assert.equal(canonicalCatalog.archive_month, '2026-01-01');
+    assert.equal(canonicalCatalog.measurement_started_at, '2026-01-02T12:00:00.000123Z');
+    assert.equal(canonicalCatalog.measurement_ended_at, '2026-01-02T12:05:00.000789Z');
+    assert.equal(canonicalCatalog.verified_at, '2026-01-03T01:02:03.000987Z');
 
     archiveDirectory = await mkdtemp(path.join(tmpdir(), 'health-prune-integration-'));
     await writeFile(
       path.join(archiveDirectory, 'heart-rate-samples.csv'),
       [
         ARCHIVE_SCHEMAS['heart-rate-samples.csv'],
-        [streamId, '2026-01-02', '2026-01-02T12:00:00.000Z', '\\N', '70', '\\N'],
+        [streamId, '2026-01-02', '2026-01-02T12:00:00.000123Z', '\\N', '70', 'N'],
       ].map(encodeCsvRow).join(''),
     );
     await writeFile(
       path.join(archiveDirectory, 'calorie-intervals.csv'),
       [
         ARCHIVE_SCHEMAS['calorie-intervals.csv'],
-        [streamId, '2026-01-02', 'active', '2026-01-02T12:00:00.000Z',
-          '2026-01-02T12:05:00.000Z', '\\N', '0', '\\N'],
+        [streamId, '2026-01-02', 'active', '2026-01-02T12:00:00.000456Z',
+          '2026-01-02T12:05:00.000789Z', '\\N', '0', 'N'],
       ].map(encodeCsvRow).join(''),
     );
 
     const removed = await createHealthArchiveRepository(client)
-      .pruneVerifiedMonth(catalogId, { batchSize: 1, archiveDirectory });
+      .pruneVerifiedMonth(catalogId, {
+        batchSize: 1,
+        archiveDirectory,
+        nullableTextEncoding: 'tagged-v1',
+      });
 
     assert.equal(removed.compactHeartRateSamples, 1);
     assert.equal(removed.compactCalorieIntervals, 1);

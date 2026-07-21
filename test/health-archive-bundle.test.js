@@ -132,7 +132,7 @@ test('monthly bundle has deterministic schemas and bytes with bounded keyset exp
     assert.ok(firstPool.queries.every(({ sql }) => !/\bOFFSET\b/i.test(sql)));
     assert.match(
       await readFile(path.join(extracted, 'heart-rate-samples.csv'), 'utf8'),
-      /"heart,one"/,
+      /"Sheart,one"/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -201,6 +201,39 @@ test('monthly bundle validation rejects measurements with an unreferenced source
         expectedArchiveMonth: '2026-01-01',
       }),
       /unknown source stream/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('monthly bundle validation rejects malformed schema-v2 nullable text tags', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'health-bundle-nullable-tag-'));
+  const files = path.join(root, 'files');
+  const extracted = path.join(root, 'extracted');
+  const bundle = path.join(root, 'bundle.gz');
+  try {
+    await buildMonthBundle({
+      pool: archivePool(), sourceAccountId, archiveMonth: '2026-01-01',
+      directory: files, outputPath: bundle, batchSize: 2,
+    });
+    await extractMonthBundle({ inputPath: bundle, outputDirectory: extracted });
+    const heartPath = path.join(extracted, 'heart-rate-samples.csv');
+    const heartCsv = (await readFile(heartPath, 'utf8')).replace('Sheart,one', 'Xheart,one');
+    await writeFile(heartPath, heartCsv);
+    const manifestPath = path.join(extracted, 'manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest.files['heart-rate-samples.csv'].sha256 = crypto
+      .createHash('sha256').update(heartCsv).digest('hex');
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await assert.rejects(
+      validateExtractedMonth({
+        directory: extracted,
+        expectedSourceAccountId: sourceAccountId,
+        expectedArchiveMonth: '2026-01-01',
+      }),
+      /nullable text field/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

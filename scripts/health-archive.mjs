@@ -81,6 +81,7 @@ try {
       archiveMonth: options.archiveMonth,
       dryRun: !options.execute,
       prune: options.prune,
+      rebuild: options.rebuild,
     });
   }
   console.log(JSON.stringify(result, null, 2));

@@ -34,6 +34,7 @@ test('health archive operator exposes safe list, verify, extract, import, and ru
     archiveMonth: '2026-01-01',
     execute: false,
     prune: false,
+    rebuild: false,
   });
   assert.deepEqual(parseHealthArchiveArgs([
     'run', '--source-account=account-id', '--month=2026-01-01', '--execute', '--prune',
@@ -43,8 +44,24 @@ test('health archive operator exposes safe list, verify, extract, import, and ru
     archiveMonth: '2026-01-01',
     execute: true,
     prune: true,
+    rebuild: false,
+  });
+  assert.deepEqual(parseHealthArchiveArgs([
+    'run', '--source-account=account-id', '--month=2026-01-01', '--execute', '--rebuild',
+  ]), {
+    command: 'run',
+    sourceAccountId: 'account-id',
+    archiveMonth: '2026-01-01',
+    execute: true,
+    prune: false,
+    rebuild: true,
   });
   assert.throws(() => parseHealthArchiveArgs(['run', '--prune']), /--prune requires --execute/);
+  assert.throws(() => parseHealthArchiveArgs(['run', '--rebuild']), /--rebuild requires --execute/);
+  assert.throws(
+    () => parseHealthArchiveArgs(['run', '--execute', '--prune', '--rebuild']),
+    /cannot be combined/,
+  );
   assert.throws(() => parseHealthArchiveArgs(['import', '--id', 'catalog-id']), /--target-database-url/);
 
   const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));

@@ -35,7 +35,27 @@ function repositoryFor(initial) {
     events,
     get current() { return current; },
     async withMonthLock(_source, _month, callback) { return callback(this); },
-    async reserveMonth() { events.push('reserve'); return current; },
+    async reserveMonth(_sourceAccountId, _archiveMonth, { rebuild = false } = {}) {
+      events.push(rebuild ? 'reserve-rebuild' : 'reserve');
+      if (rebuild) {
+        current = {
+          ...current,
+          id: '33333333-3333-3333-3333-333333333333',
+          archive_version: Number(current.archive_version) + 1,
+          state: 'pending',
+          object_key: null,
+          ciphertext_hash: null,
+          plaintext_hash: null,
+          byte_size: null,
+          heart_sample_count: 0,
+          calorie_interval_count: 0,
+          encryption_key_version: null,
+          error_code: null,
+          error_message: null,
+        };
+      }
+      return current;
+    },
     async markBuilding() { events.push('building'); current = { ...current, state: 'building' }; return current; },
     async recordBuilt(_id, built) {
       events.push('built');
@@ -54,6 +74,16 @@ function repositoryFor(initial) {
     },
     async markUploaded() { events.push('uploaded'); current = { ...current, state: 'uploaded' }; return current; },
     async markVerified() { events.push('verified'); current = { ...current, state: 'verified' }; return current; },
+    async recordVerificationSuccess() {
+      events.push('verification-succeeded');
+      current = {
+        ...current,
+        state: current.state === 'failed' ? 'verified' : current.state,
+        error_code: null,
+        error_message: null,
+      };
+      return current;
+    },
     async recordFailure(_id, failure) { events.push(['failed', failure]); current = { ...current, state: 'failed' }; },
     async recordVerificationFailure(_id, failure) {
       events.push(['verification-failed', failure]);
@@ -315,4 +345,63 @@ test('a repeated prune request freshly verifies and preserves a pruned state on 
     errorCode: 'ARCHIVE_VERIFY_FAILED',
     errorMessage: 'Health archive verify failed',
   }]]);
+});
+
+test('successful operator re-verification restores failed active state without reactivating terminal rows', async () => {
+  for (const [initialState, expectedState] of [
+    ['failed', 'verified'],
+    ['superseded', 'superseded'],
+    ['pruned', 'pruned'],
+  ]) {
+    const repository = repositoryFor(catalog(initialState, {
+      error_code: 'ARCHIVE_VERIFY_FAILED',
+      error_message: 'Health archive verify failed',
+    }));
+    const { service } = serviceFor(repository);
+
+    const result = await service.verifyById(repository.current.id);
+
+    assert.equal(result.catalog.state, expectedState);
+    assert.equal(result.catalog.error_code, null);
+    assert.equal(result.catalog.error_message, null);
+    assert.deepEqual(repository.events, ['verification-succeeded']);
+  }
+});
+
+test('explicit rebuild creates and verifies a new immutable version after prune mismatch', async () => {
+  const repository = repositoryFor(catalog('verified', {
+    error_code: 'ARCHIVE_PRUNE_FAILED',
+    error_message: 'Health archive prune failed',
+  }));
+  const replacementHash = 'c'.repeat(64);
+  const { service } = serviceFor(repository, {
+    async buildArchive() {
+      return {
+        filePath: 'replacement.hharchive',
+        objectKey: `health-hub/raw/v1/2026/01/health-raw-2026-01-${replacementHash}.hharchive`,
+        ciphertextHash: replacementHash,
+        plaintextHash: 'd'.repeat(64),
+        byteSize: 456,
+        heartSampleCount: 3,
+        calorieIntervalCount: 1,
+        measurementStartedAt: '2026-01-02T12:00:00.000123Z',
+        measurementEndedAt: '2026-01-02T12:05:00.000456Z',
+        encryptionKeyVersion: 1,
+        cleanup: async () => {},
+      };
+    },
+  });
+
+  const result = await service.archiveMonth({
+    sourceAccountId,
+    archiveMonth,
+    rebuild: true,
+  });
+
+  assert.equal(result.catalog.archive_version, 2);
+  assert.equal(result.catalog.state, 'verified');
+  assert.match(result.catalog.object_key, new RegExp(replacementHash));
+  assert.deepEqual(repository.events, [
+    'reserve-rebuild', 'building', 'built', 'uploaded', 'verified',
+  ]);
 });

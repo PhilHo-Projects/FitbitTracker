@@ -23,6 +23,26 @@ async function createDatabase() {
      VALUES ($1, 'google', 'archive-test')`,
     [sourceAccountId],
   );
+  const canonicalize = (result) => ({
+    ...result,
+    rows: result.rows.map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [
+      key,
+      value instanceof Date
+        ? ['archive_month', 'civil_date', 'membership_start_date'].includes(key)
+          ? value.toISOString().slice(0, 10)
+          : value.toISOString()
+        : value,
+    ]))),
+  });
+  const query = pool.query.bind(pool);
+  pool.query = async (...args) => canonicalize(await query(...args));
+  const connect = pool.connect.bind(pool);
+  pool.connect = async () => {
+    const client = await connect();
+    const clientQuery = client.query.bind(client);
+    client.query = async (...args) => canonicalize(await clientQuery(...args));
+    return client;
+  };
   return pool;
 }
 
@@ -100,6 +120,54 @@ test('catalog list is hard bounded and uses a stable opaque cursor', async () =>
   }
 });
 
+test('catalog reads and transitions return canonical date and full-microsecond UTC text', async () => {
+  const expected = {
+    archive_month: '2026-01-01',
+    measurement_started_at: '2026-01-02T12:00:00.000123Z',
+    measurement_ended_at: '2026-01-02T12:05:00.000456Z',
+    verified_at: '2026-01-03T01:02:03.000789Z',
+    pruned_at: null,
+    created_at: '2026-01-01T00:00:00.000111Z',
+    updated_at: '2026-01-03T01:02:03.000999Z',
+  };
+  const queries = [];
+  const database = {
+    async query(sql) {
+      queries.push(sql);
+      const canonical = /archive_month::text AS archive_month/i.test(sql)
+        && /to_char\(measurement_started_at AT TIME ZONE 'UTC'/i.test(sql)
+        && /to_char\(updated_at AT TIME ZONE 'UTC'/i.test(sql);
+      const row = {
+        id: 'catalog-id',
+        source_account_id: sourceAccountId,
+        archive_version: 1,
+        is_active: true,
+        state: 'verified',
+        ...canonical ? expected : {
+          archive_month: new Date('2026-01-01T00:00:00+14:00'),
+          measurement_started_at: new Date(expected.measurement_started_at),
+          measurement_ended_at: new Date(expected.measurement_ended_at),
+          verified_at: new Date(expected.verified_at),
+          pruned_at: null,
+          created_at: new Date(expected.created_at),
+          updated_at: new Date(expected.updated_at),
+        },
+      };
+      return { rows: [row], rowCount: 1 };
+    },
+  };
+  const repository = createHealthArchiveRepository(database);
+
+  const byId = await repository.getById('catalog-id');
+  const page = await repository.list({ limit: 1 });
+  const transitioned = await repository.markVerified('catalog-id');
+
+  for (const row of [byId, page.items[0], transitioned]) {
+    for (const [field, value] of Object.entries(expected)) assert.equal(row[field], value);
+  }
+  assert.ok(queries.every((sql) => !sql.includes('SELECT *') && !sql.includes('RETURNING *')));
+});
+
 test('a failed rebuild is superseded and receives a new immutable catalog version', async () => {
   const pool = await createDatabase();
   const repository = createHealthArchiveRepository(pool);
@@ -128,6 +196,70 @@ test('a failed rebuild is superseded and receives a new immutable catalog versio
     assert.deepEqual(rows.rows, [
       { archive_version: 1, is_active: false, state: 'superseded' },
       { archive_version: 2, is_active: true, state: 'pending' },
+    ]);
+  } finally {
+    await pool.end();
+  }
+});
+
+test('prune mismatch needs explicit rebuild and retains the immutable prior catalog version', async () => {
+  const pool = await createDatabase();
+  const repository = createHealthArchiveRepository(pool);
+  try {
+    const original = await repository.reserveMonth(sourceAccountId, '2026-01-01');
+    await repository.markBuilding(original.id);
+    await repository.recordBuilt(original.id, {
+      objectKey: `health-hub/raw/v1/2026/01/health-raw-2026-01-${'a'.repeat(64)}.hharchive`,
+      heartSampleCount: 2,
+      calorieIntervalCount: 1,
+      measurementStartedAt: '2026-01-02T12:00:00.000123Z',
+      measurementEndedAt: '2026-01-02T12:05:00.000456Z',
+      byteSize: 123,
+      plaintextHash: 'b'.repeat(64),
+      ciphertextHash: 'a'.repeat(64),
+      encryptionKeyVersion: 1,
+    });
+    await repository.markUploaded(original.id);
+    await repository.markVerified(original.id);
+    await pool.query(
+      `UPDATE health_archive_catalog
+       SET error_code = 'ARCHIVE_PRUNE_FAILED', error_message = 'Health archive prune failed'
+       WHERE id = $1`,
+      [original.id],
+    );
+
+    const automatic = await repository.reserveMonth(sourceAccountId, '2026-01-01');
+    assert.equal(automatic.id, original.id);
+    const replacement = await repository.reserveMonth(
+      sourceAccountId,
+      '2026-01-01',
+      { rebuild: true },
+    );
+    const rows = (await pool.query(
+      `SELECT id, archive_version, is_active, state, object_key
+       FROM health_archive_catalog
+       WHERE source_account_id = $1 AND archive_month = '2026-01-01'
+       ORDER BY archive_version`,
+      [sourceAccountId],
+    )).rows;
+
+    assert.notEqual(replacement.id, original.id);
+    assert.equal(replacement.archive_version, 2);
+    assert.deepEqual(rows, [
+      {
+        id: original.id,
+        archive_version: 1,
+        is_active: false,
+        state: 'superseded',
+        object_key: `health-hub/raw/v1/2026/01/health-raw-2026-01-${'a'.repeat(64)}.hharchive`,
+      },
+      {
+        id: replacement.id,
+        archive_version: 2,
+        is_active: true,
+        state: 'pending',
+        object_key: null,
+      },
     ]);
   } finally {
     await pool.end();
@@ -169,6 +301,55 @@ test('verification failure metadata preserves an already pruned catalog state', 
     assert.equal(row.state, 'pruned');
     assert.equal(row.error_code, 'ARCHIVE_VERIFY_FAILED');
     assert.equal(row.error_message, 'Health archive verify failed');
+  } finally {
+    await pool.end();
+  }
+});
+
+test('successful re-verification safely restores failed active rows and preserves terminal states', async () => {
+  const pool = await createDatabase();
+  const repository = createHealthArchiveRepository(pool);
+  const ids = {
+    failed: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    superseded: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+    pruned: 'abababab-abab-abab-abab-abababababab',
+  };
+  try {
+    for (const [state, id] of Object.entries(ids)) {
+      await pool.query(
+        `INSERT INTO health_archive_catalog (
+           id, source_account_id, archive_month, archive_version, is_active, state,
+           object_key, ciphertext_hash, error_code, error_message, verified_at, pruned_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, 'object-key', $7,
+                   'ARCHIVE_VERIFY_FAILED', 'Health archive verify failed',
+                   CASE WHEN $6 IN ('superseded', 'pruned') THEN CURRENT_TIMESTAMP ELSE NULL END,
+                   CASE WHEN $6 = 'pruned' THEN CURRENT_TIMESTAMP ELSE NULL END)`,
+        [
+          id,
+          sourceAccountId,
+          state === 'failed' ? '2026-01-01' : state === 'superseded' ? '2026-02-01' : '2026-03-01',
+          1,
+          state !== 'superseded',
+          state,
+          'a'.repeat(64),
+        ],
+      );
+    }
+    assert.equal(typeof repository.recordVerificationSuccess, 'function');
+    const failed = await repository.recordVerificationSuccess(ids.failed);
+    const superseded = await repository.recordVerificationSuccess(ids.superseded);
+    const pruned = await repository.recordVerificationSuccess(ids.pruned);
+
+    assert.equal(failed.state, 'verified');
+    assert.equal(failed.is_active, true);
+    assert.equal(superseded.state, 'superseded');
+    assert.equal(superseded.is_active, false);
+    assert.equal(pruned.state, 'pruned');
+    for (const row of [failed, superseded, pruned]) {
+      assert.equal(row.error_code, null);
+      assert.equal(row.error_message, null);
+      assert.ok(row.verified_at);
+    }
   } finally {
     await pool.end();
   }
@@ -216,7 +397,7 @@ function createPruneDatabase({
     async query(sql, params = []) {
       queries.push({ sql, params });
       if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [], rowCount: 0 };
-      if (sql.includes('SELECT * FROM health_archive_catalog WHERE id')) {
+      if (sql.includes('FROM health_archive_catalog WHERE id')) {
         return { rows: [{
           id: 'catalog-id',
           source_account_id: sourceAccountId,
@@ -350,5 +531,29 @@ test('successful prune uses one owned client, exact compact-only deletes, and bo
     assert.ok(deleteQueries.every(({ sql }) => sql.includes('health_archive_prune_')));
     assert.ok(deleteQueries.every(({ sql }) => !/DELETE FROM (heart_rate_samples|calorie_intervals) AS/.test(sql)));
     assert.ok(database.queries.some(({ sql }) => sql.includes('IN SHARE ROW EXCLUSIVE MODE')));
+  });
+});
+
+test('prune staging preserves microseconds and tagged nullable upstream strings exactly', async () => {
+  const hearts = [
+    ['33333333-3333-3333-3333-333333333333', '2026-01-02', '2026-01-02T12:00:00.000123Z', '\\N', '70', 'N'],
+    ['33333333-3333-3333-3333-333333333333', '2026-01-02', '2026-01-02T12:00:00.000124Z', '50400', '71', 'S'],
+    ['33333333-3333-3333-3333-333333333333', '2026-01-02', '2026-01-02T12:00:00.000125Z', '50400', '72', 'S\\N'],
+  ];
+  const calories = calorieRows.map((row) => [...row.slice(0, -1), `S${row.at(-1)}`]);
+  await withArchiveDirectory({ hearts, calories }, async (archiveDirectory) => {
+    const database = createPruneDatabase({ calorieIntervalCount: calorieRows.length });
+    const repository = createHealthArchiveRepository(database);
+    await repository.pruneVerifiedMonth('catalog-id', {
+      archiveDirectory,
+      batchSize: 10,
+      nullableTextEncoding: 'tagged-v1',
+    });
+    const staged = database.queries.find(({ sql }) =>
+      sql.startsWith('INSERT INTO health_archive_prune_heart_stage'));
+    const rows = Array.from({ length: 3 }, (_unused, index) =>
+      staged.params.slice(index * 6, index * 6 + 6));
+    assert.deepEqual(rows.map((row) => row[2]), hearts.map((row) => row[2]));
+    assert.deepEqual(rows.map((row) => row[5]), [null, '', '\\N']);
   });
 });

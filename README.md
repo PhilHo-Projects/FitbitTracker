@@ -308,6 +308,11 @@ AES-256-GCM ciphertext of the complete gzip bundle
 16-byte authentication tag
 ```
 
+Manifest schema 2 records PostgreSQL civil dates as canonical `YYYY-MM-DD` text and UTC instants
+with all six microsecond digits. Nullable upstream text uses the declared `tagged-v1` encoding so
+null, empty text, literal `\N`, quotes, and newlines remain distinct. Recovery remains compatible
+with schema-1 archives, whose legacy `\N` value represented null.
+
 The catalog plaintext SHA-256 covers the complete compressed bundle. The ciphertext SHA-256
 covers every stored envelope byte and forms the immutable object name:
 `health-hub/raw/v1/YYYY/MM/health-raw-YYYY-MM-<full-lowercase-sha256>.hharchive`. Upload uses
@@ -335,6 +340,11 @@ npm run health:archive -- run --source-account <uuid> --month 2026-01-01 --execu
 
 # Reverify the complete immutable object named by a catalog entry.
 npm run health:archive -- verify --id <catalog-uuid>
+
+# After a prune mismatch, explicitly supersede the active verified catalog entry and build a new
+# immutable version. The prior catalog row/object remains retained; this cannot be combined with
+# --prune and never happens during automatic worker retries.
+npm run health:archive -- run --source-account <uuid> --month 2026-01-01 --execute --rebuild
 
 # Retain decrypted files only in this explicit operator directory.
 npm run health:archive -- extract --id <catalog-uuid> --output ./restore/2026-01
