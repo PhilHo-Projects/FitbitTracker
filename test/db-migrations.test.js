@@ -86,10 +86,11 @@ test('lifelong archive schema uses compact semantic identities and enhanced hear
       'health_archive_catalog'
     )
   `);
-  const columnsByTable = Object.groupBy(
-    columns.rows.map(({ table_name, column_name }) => column_name),
-    (_, index) => columns.rows[index].table_name,
-  );
+  const columnsByTable = columns.rows.reduce((grouped, { table_name, column_name }) => {
+    grouped[table_name] ??= [];
+    grouped[table_name].push(column_name);
+    return grouped;
+  }, {});
 
   assert.deepEqual(
     new Set(columnsByTable.heart_rate_samples_compact),
