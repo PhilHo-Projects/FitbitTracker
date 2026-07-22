@@ -24,3 +24,7 @@ Thumbs.db
 output/
 dashboard-*.png
 .runtime/
+
+# Agent-generated state and linked worktree directories
+.superpowers/
+.worktrees/
