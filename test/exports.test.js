@@ -150,6 +150,7 @@ test('background export jobs create inspectable ZIP and PNG artifacts and expire
     assert.equal(manifest.range.endDateExclusive, '2026-07-17');
     assert.equal(manifest.journalIncluded, true);
     assert.equal(manifest.files.length, 6);
+    assert.equal(manifest.rawCoverage, null);
 
     const archiveJob = await service.create({
       exportType: 'archive',
@@ -166,6 +167,12 @@ test('background export jobs create inspectable ZIP and PNG artifacts and expire
     assert.equal(completedArchive.status, 'completed');
     assert.ok(archive.getEntry('heart-rate-samples.csv').getData().toString().split('\n').length > 90);
     assert.ok(archive.getEntry('calorie-intervals.csv').getData().toString().split('\n').length > 90);
+    const archiveManifest = JSON.parse(archive.readAsText('manifest.json'));
+    assert.equal(archiveManifest.rawCoverage.exactLocal.heart.rowCount, 96);
+    assert.equal(archiveManifest.rawCoverage.exactLocal.calories.rowCount, 96);
+    assert.deepEqual(archiveManifest.rawCoverage.coldArchiveMonths, []);
+    assert.deepEqual(archiveManifest.rawCoverage.summaryOnlyMonths, []);
+    assert.deepEqual(archiveManifest.rawCoverage.summaryOnlyCoverage, []);
 
     const pngJob = await service.create({
       exportType: 'png',
@@ -189,6 +196,112 @@ test('background export jobs create inspectable ZIP and PNG artifacts and expire
     assert.equal(cleanup.removed, 4);
     assert.equal((await service.get(zipJob.id)).status, 'expired');
     await assert.rejects(stat(completedZip.filePath), { code: 'ENOENT' });
+  } finally {
+    await fixture.pool.end();
+  }
+});
+
+test('raw export iterators use stable keyset cursors and never OFFSET paging', async () => {
+  const calls = [];
+  const rows = [
+    {
+      id: '10000000-0000-4000-8000-000000000001',
+      provider_key: 'heart:1',
+      provider_id: null,
+      civil_date: '2026-01-01',
+      sampled_at_text: '2026-01-01T00:00:00.000123Z',
+      utc_offset_seconds: 0,
+      beats_per_minute: 60,
+      device: {},
+      source_fields: {},
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000002',
+      provider_key: 'heart:2',
+      provider_id: null,
+      civil_date: '2026-01-01',
+      sampled_at_text: '2026-01-01T00:00:00.000456Z',
+      utc_offset_seconds: 0,
+      beats_per_minute: 61,
+      device: {},
+      source_fields: {},
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000003',
+      provider_key: 'heart:3',
+      provider_id: null,
+      civil_date: '2026-01-01',
+      sampled_at_text: '2026-01-01T00:00:00.000789Z',
+      utc_offset_seconds: 0,
+      beats_per_minute: 62,
+      device: {},
+      source_fields: {},
+    },
+  ];
+  const pool = {
+    async query(sql, params = []) {
+      calls.push({ sql, params });
+      if (/FROM source_accounts/.test(sql)) {
+        return {
+          rows: [{
+            id: 'account-1',
+            provider: 'google-health-connect',
+            provider_account_id: 'fixture',
+            display_name: 'Fixture',
+            timezone: 'UTC',
+            membership_start_date: '2026-01-01',
+          }],
+        };
+      }
+      if (/FROM heart_rate_samples/.test(sql)) {
+        const cursor = params[3] ?? null;
+        const available = rows.filter((row) => cursor === null || row.id > cursor);
+        return { rows: available.slice(0, Number(params.at(-1))) };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  };
+  const dataset = createAnalysisDatasetService({ pool, batchSize: 2 });
+  const streamed = [];
+  for await (const row of await dataset.streamHeartRateSamples({
+    startDate: '2026-01-01',
+    endDateExclusive: '2026-01-02',
+  })) streamed.push(row);
+
+  assert.deepEqual(streamed.map(({ sampledAt }) => sampledAt), [
+    '2026-01-01T00:00:00.000123Z',
+    '2026-01-01T00:00:00.000456Z',
+    '2026-01-01T00:00:00.000789Z',
+  ]);
+  assert.equal(calls.some(({ sql }) => /\bOFFSET\b/i.test(sql)), false);
+  assert.equal(calls.filter(({ sql }) => /FROM heart_rate_samples/.test(sql)).length, 2);
+});
+
+test('full export coverage distinguishes cold archive months from summary-only months', async () => {
+  const fixture = await fixtureServices();
+  try {
+    const sourceAccountId = (
+      await fixture.pool.query('SELECT id FROM source_accounts ORDER BY created_at LIMIT 1')
+    ).rows[0].id;
+    await fixture.pool.query(
+      `INSERT INTO health_archive_catalog (
+         id, source_account_id, archive_month, archive_version, is_active, state,
+         heart_sample_count, calorie_interval_count, verified_at
+       ) VALUES ($1, $2, '2026-01-01', 1, true, 'verified', 100, 200, $3)`,
+      ['94000000-0000-4000-8000-000000000001', sourceAccountId, '2026-04-25T03:00:00Z'],
+    );
+    const coverage = await fixture.datasetService.rawCoverage(
+      { startDate: '2026-01-01', endDateExclusive: '2026-03-01' },
+      ['heart', 'calories'],
+    );
+
+    assert.equal(coverage.exactLocal.heart.rowCount, 0);
+    assert.equal(coverage.exactLocal.calories.rowCount, 0);
+    assert.deepEqual(coverage.coldArchiveMonths.map(({ month }) => month), ['2026-01-01']);
+    assert.deepEqual(coverage.summaryOnlyMonths, ['2026-02-01']);
+    assert.deepEqual(coverage.summaryOnlyCoverage, [
+      { month: '2026-02-01', metrics: ['heart', 'calories'] },
+    ]);
   } finally {
     await fixture.pool.end();
   }

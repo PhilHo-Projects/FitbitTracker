@@ -8,6 +8,7 @@ import {
   dateRangeForPreset,
   exportPollingNeeded,
   formatDuration,
+  heartDetailNotice,
   isLocalDevelopmentHost,
   scaleSleepTrendRows,
   sleepStageBreakdown,
@@ -85,6 +86,17 @@ test('export polling continues only while a job can still change status', () => 
   assert.equal(exportPollingNeeded([{ status: 'running' }]), true);
   assert.equal(exportPollingNeeded([{ status: 'completed' }, { status: 'failed' }]), false);
   assert.equal(exportPollingNeeded([]), false);
+});
+
+test('heart detail notice makes cold-storage fallback explicit', () => {
+  assert.equal(heartDetailNotice({ rawAvailability: { requestedRangeFullyRaw: true } }), '');
+  assert.match(
+    heartDetailNotice({
+      rawAvailability: { requestedRangeFullyRaw: false, coldArchiveMonth: '2026-01-01' },
+      detailUnavailableMessage: 'Fine-grained measurements are in encrypted cold storage.',
+    }),
+    /encrypted cold storage/i,
+  );
 });
 
 test('Today follows the profile civil date instead of the UTC calendar date', () => {

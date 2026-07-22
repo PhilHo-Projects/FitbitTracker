@@ -649,7 +649,7 @@ test('stale running chunks are requeued so a restarted worker resumes safely', a
   await pool.end();
 });
 
-test('sync worker ingests a chunk, recalculates its day, and completes the job', async () => {
+test('sync worker ingests a chunk, finalizes its window, and completes the job', async () => {
   const pool = await createDatabase();
   const repository = createSyncRepository(pool, { advisoryLocks: false });
   const gatewayRequests = [];
@@ -716,7 +716,7 @@ test('sync worker ingests a chunk, recalculates its day, and completes the job',
   await pool.end();
 });
 
-test('successful sync jobs prune expired raw rows only after every chunk completes', async () => {
+test('raw retention alone never authorizes deletion', async () => {
   const pool = await createDatabase();
   const repository = createSyncRepository(pool, { advisoryLocks: false });
   const baseWriter = createMetricWriter(pool);
@@ -748,7 +748,148 @@ test('successful sync jobs prune expired raw rows only after every chunk complet
   await service.runOnce();
   assert.equal(prunes.length, 0);
   await service.runOnce();
-  assert.deepEqual(prunes.map(({ cutoffDate }) => cutoffDate), ['2026-04-19']);
+  assert.equal(prunes.length, 0);
+  await pool.end();
+});
+
+test('sync completion never invokes raw deletion even when legacy retention flags are supplied', async () => {
+  const pool = await createDatabase();
+  const repository = createSyncRepository(pool, { advisoryLocks: false });
+  const baseWriter = createMetricWriter(pool);
+  const prunes = [];
+  const service = createSyncService({
+    pool,
+    repository,
+    writer: {
+      ...baseWriter,
+      async pruneRawMetricsBefore(sourceAccountId, cutoffDate) {
+        prunes.push({ sourceAccountId, cutoffDate });
+        return baseWriter.pruneRawMetricsBefore(sourceAccountId, cutoffDate);
+      },
+    },
+    gateway: {
+      request: async () => ({ ok: true, data: { dataPoints: [] }, nextPageToken: null }),
+    },
+    rawRetentionDays: 90,
+    rawPruningEnabled: true,
+    now: () => Date.parse('2026-07-17T16:00:00.000Z'),
+  });
+
+  await service.enqueue({
+    mode: 'custom',
+    startDate: '2026-07-17',
+    endDateExclusive: '2026-07-18',
+    metrics: ['sleep', 'heart-rate'],
+  });
+  await service.runOnce();
+  assert.equal(prunes.length, 0);
+  await service.runOnce();
+  assert.equal(prunes.length, 0);
+  await pool.end();
+});
+
+test('a two-page sync defers each daily finalization until the last provider page', async () => {
+  const pool = await createDatabase();
+  const repository = createSyncRepository(pool, { advisoryLocks: false });
+  const baseWriter = createMetricWriter(pool);
+  const finalized = [];
+  const writer = {
+    ...baseWriter,
+    async recalculateDaily(sourceAccountId, date, database) {
+      finalized.push({ sourceAccountId, date, database });
+      return baseWriter.recalculateDaily(sourceAccountId, date, database);
+    },
+  };
+  let page = 0;
+  const service = createSyncService({
+    pool,
+    repository,
+    writer,
+    gateway: {
+      async request() {
+        page += 1;
+        const civilDate = page === 1 ? '2026-07-16' : '2026-07-17';
+        return {
+          data: {
+            dataPoints: [{
+              dataPointName: `heart-${civilDate}`,
+              heartRate: {
+                samples: [{
+                  sampleTime: `${civilDate}T12:00:00Z`,
+                  utcOffset: '-14400s',
+                  beatsPerMinute: 70 + page,
+                }],
+              },
+            }],
+          },
+          nextPageToken: page === 1 ? 'page-2' : null,
+        };
+      },
+    },
+  });
+
+  await service.enqueue({
+    mode: 'custom',
+    startDate: '2026-07-16',
+    endDateExclusive: '2026-07-18',
+    metrics: ['heart-rate'],
+  });
+  await service.runOnce();
+  assert.deepEqual(finalized, []);
+  await service.runOnce();
+  assert.deepEqual(finalized.map(({ date }) => date), ['2026-07-16', '2026-07-17']);
+  assert.equal(finalized.every(({ database }) => typeof database?.query === 'function'), true);
+  assert.equal(finalized[0].database, finalized[1].database);
+  await pool.end();
+});
+
+test('a finalization failure rolls back summaries and fails the last chunk', async () => {
+  const pool = await createDatabase();
+  const repository = createSyncRepository(pool, { advisoryLocks: false });
+  const baseWriter = createMetricWriter(pool);
+  const service = createSyncService({
+    pool,
+    repository,
+    writer: {
+      ...baseWriter,
+      async recalculateDaily() {
+        throw Object.assign(new Error('summary finalization failed'), { transient: false });
+      },
+    },
+    gateway: {
+      async request() {
+        return {
+          data: {
+            dataPoints: [{
+              dataPointName: 'heart-finalization-failure',
+              heartRate: {
+                samples: [{
+                  sampleTime: '2026-07-16T12:00:00Z',
+                  utcOffset: '-14400s',
+                  beatsPerMinute: 71,
+                }],
+              },
+            }],
+          },
+          nextPageToken: null,
+        };
+      },
+    },
+  });
+
+  await service.enqueue({
+    mode: 'custom',
+    startDate: '2026-07-16',
+    endDateExclusive: '2026-07-17',
+    metrics: ['heart-rate'],
+  });
+  await service.runOnce();
+
+  assert.equal((await service.status()).recent[0].status, 'completed_with_errors');
+  assert.equal(
+    Number((await pool.query('SELECT COUNT(*) AS count FROM heart_rate_daily_summaries')).rows[0].count),
+    0,
+  );
   await pool.end();
 });
 

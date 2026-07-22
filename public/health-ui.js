@@ -233,6 +233,14 @@ export function exportPollingNeeded(jobs = []) {
   return jobs.some(({ status }) => status === 'queued' || status === 'running');
 }
 
+export function heartDetailNotice(data = {}) {
+  if (data.rawAvailability?.requestedRangeFullyRaw !== false) return '';
+  return data.detailUnavailableMessage
+    || (data.rawAvailability?.coldArchiveMonth
+      ? 'Fine-grained heart-rate measurements for this range are in encrypted cold storage.'
+      : 'Fine-grained heart-rate measurements are unavailable locally for this range.');
+}
+
 export function isLocalDevelopmentHost(hostname) {
   return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(
     String(hostname || '').toLowerCase(),

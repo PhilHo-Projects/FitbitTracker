@@ -13,11 +13,14 @@
     "dev:app": "node --watch server.js",
     "preview": "npm run build && node scripts/preview-fixtures.mjs",
     "migrate": "node scripts/migrate.mjs",
+    "health:compact": "node scripts/compact-health.mjs",
+    "health:archive": "node scripts/health-archive.mjs",
     "seed": "node scripts/seed.mjs",
     "start": "node scripts/start.mjs",
     "test": "node --test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1092.0",
     "archiver": "^7.0.1",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",

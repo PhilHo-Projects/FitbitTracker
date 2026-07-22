@@ -219,6 +219,9 @@ are fixed-layout companions generated from SVG, not screenshots of the browser v
 
 See `.env.example`.
 
+The complete retention contract, R2/Coolify setup, approval gates, rollback paths, and quarterly
+restore drills are in [`docs/lifelong-health-archive-runbook.md`](docs/lifelong-health-archive-runbook.md).
+
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | PostgreSQL archive connection |
@@ -232,7 +235,20 @@ See `.env.example`.
 | `SYNC_SCHEDULE_ENABLED` | No | Set `false` for manual-only sync; defaults to enabled |
 | `SYNC_INTERVAL_HOURS` | No | Scheduled sync interval; defaults to 3 hours |
 | `SYNC_SCHEDULE_LOOKBACK_DAYS` | No | Scheduled overlap window; defaults to 7 days |
-| `RAW_RETENTION_DAYS` | No | Retain raw heart/calorie rows for this many days; disabled when unset |
+| `RAW_RETENTION_DAYS` | No | Define the raw-retention cutoff only; does not authorize deletion |
+| `HEALTH_COMPACT_WRITES_ENABLED` | No | Dual-write compact normalized rows; defaults to `false` |
+| `HEALTH_RAW_PRUNING_ENABLED` | No | Allow verified-archive-only raw pruning; defaults to `false` |
+| `HEALTH_COMPACT_BACKFILL_BATCH_SIZE` | No | Maximum legacy rows per compact operator batch; defaults to 1000 |
+| `HEALTH_ARCHIVE_ENABLED` | No | Independently enable the monthly R2 archive worker; defaults to `false` |
+| `HEALTH_ARCHIVE_S3_ENDPOINT` | When archive runs | S3-compatible R2 endpoint: `https://<account>.r2.cloudflarestorage.com` |
+| `HEALTH_ARCHIVE_S3_REGION` | No | S3-compatible region; defaults to `auto` |
+| `HEALTH_ARCHIVE_S3_BUCKET` | When archive runs | Private raw-archive bucket |
+| `HEALTH_ARCHIVE_S3_ACCESS_KEY_ID` | When archive runs | Bucket-scoped Object Read/Write access key ID |
+| `HEALTH_ARCHIVE_S3_SECRET_ACCESS_KEY` | When archive runs | Bucket-scoped Object Read/Write secret |
+| `HEALTH_ARCHIVE_ENCRYPTION_KEYS` | When archive runs | Versioned AES-256 archive keys, using the journal keyring convention |
+| `HEALTH_ARCHIVE_INTERVAL_HOURS` | No | Independent archive-worker interval; defaults to 24 hours |
+| `HEALTH_ARCHIVE_BATCH_SIZE` | No | Maximum export/import/prune rows per batch; defaults to 1000 |
+| `HEALTH_ARCHIVE_TEMP_DIR` | No | Controlled temporary disk directory removed after each operation |
 | `EXPORT_STORAGE_DIR` | No | Private temporary export directory |
 | `PORT` | No | Express port; defaults to 3000 |
 
@@ -241,11 +257,115 @@ Mutations validate browser origin, login attempts are throttled, health response
 `Cache-Control: no-store`, logs omit payloads/secrets, and restrictive CSP/permission headers are
 enabled.
 
-Production uses a 90-day raw-data window to bound disk usage. Raw heart-rate samples and calorie
-intervals are pruned only after an entire sync job succeeds; sleep, journals, and daily summaries
-remain permanent. Backfills keep full sleep and daily-resting-heart history while clamping raw
-metrics to the retained window. Local development leaves retention unset and never shares its
-PostgreSQL volume with production.
+`RAW_RETENTION_DAYS` only limits high-volume raw metric ranges requested by backfill/custom sync;
+sync completion never deletes rows. The only raw deletion path is the explicit archive operator
+command below. It requires both archive/pruning gates, freshly downloads and fully verifies the
+stored object, stages the authenticated CSV values, and deletes only exact matching compact rows
+in bounded batches. Legacy raw tables, sleep, journals, and daily summaries remain permanent.
+
+### Compact health operator
+
+The compact operator is read-only by default. It never deletes legacy source rows and scans
+backfills in bounded keyset batches.
+
+```bash
+# Compare legacy, compact, and finalized heart summaries. This is the default operation.
+npm run health:compact -- --validate
+
+# Preflight all source rows and duplicate semantic identities without writing.
+npm run health:compact -- --backfill --batch-size 1000
+
+# Explicitly migrate source streams and compact rows, refresh affected daily summaries once,
+# then run validation.
+npm run health:compact -- --backfill --execute --batch-size 1000
+```
+
+Validation reports account/date differences in counts, timestamp bounds, sums, minima, maxima,
+coverage, and heart p05/median/p95. A duplicate legacy semantic identity aborts preflight before
+the first compact write. Configure the default bound with `HEALTH_COMPACT_BACKFILL_BATCH_SIZE`.
+
+### Encrypted monthly health archive
+
+The archive worker is independently disabled by default and is never part of `/readyz` or normal
+synchronization. A calendar month becomes eligible only after its final civil date is at least 90
+days old. Creation exports only normalized compact measurements and their referenced canonical
+source streams in bounded keyset pages.
+
+Each archive contains exactly these deterministic files, in this order:
+
+```text
+manifest.json
+source-streams.json
+heart-rate-samples.csv
+calorie-intervals.csv
+```
+
+The files are placed in the version-1 length-prefixed bundle, deterministically gzip-compressed,
+and then encrypted with a fresh AES-256-GCM nonce. The `HHARCHV1` envelope is:
+
+```text
+8-byte magic
+4-byte big-endian authenticated-header length
+authenticated UTF-8 JSON header
+AES-256-GCM ciphertext of the complete gzip bundle
+16-byte authentication tag
+```
+
+Manifest schema 2 records PostgreSQL civil dates as canonical `YYYY-MM-DD` text and UTC instants
+with all six microsecond digits. Nullable upstream text uses the declared `tagged-v1` encoding so
+null, empty text, literal `\N`, quotes, and newlines remain distinct. Recovery remains compatible
+with schema-1 archives, whose legacy `\N` value represented null.
+
+The catalog plaintext SHA-256 covers the complete compressed bundle. The ciphertext SHA-256
+covers every stored envelope byte and forms the immutable object name:
+`health-hub/raw/v1/YYYY/MM/health-raw-YYYY-MM-<full-lowercase-sha256>.hharchive`. Upload uses
+`If-None-Match: *`; a pre-existing object is accepted only after complete readback matches both its
+full hash and byte count. Verification then authenticates/decrypts the envelope and rechecks the
+manifest schema, month, source account, row counts, and all content hashes.
+
+The application does not create R2 buckets, object locks, or lifecycle policies. Keep the archive
+bucket private and permanent, and provision those controls outside the application. No decrypted
+health data is retained outside an explicit extraction directory; verification and import use
+controlled temporary files that are removed on success or failure.
+
+```bash
+# Catalog only; no R2 configuration is needed. Results default to 50 and never exceed 100.
+npm run health:archive -- list --limit 50
+
+# Continue a catalog page with the opaque nextCursor returned by the previous command.
+npm run health:archive -- list --limit 50 --cursor <nextCursor>
+
+# Eligibility-only dry run; no network operation or catalog mutation.
+npm run health:archive -- run --source-account <uuid> --month 2026-01-01
+
+# Explicit create/upload/readback verification. This does not prune.
+npm run health:archive -- run --source-account <uuid> --month 2026-01-01 --execute
+
+# Reverify the complete immutable object named by a catalog entry.
+npm run health:archive -- verify --id <catalog-uuid>
+
+# After a prune mismatch, explicitly supersede the active verified catalog entry and build a new
+# immutable version. The prior catalog row/object remains retained; this cannot be combined with
+# --prune and never happens during automatic worker retries. A retained, previously verified
+# superseded version remains available to verify, extract, or import by its old catalog ID.
+npm run health:archive -- run --source-account <uuid> --month 2026-01-01 --execute --rebuild
+
+# Retain decrypted files only in this explicit operator directory.
+npm run health:archive -- extract --id <catalog-uuid> --output ./restore/2026-01
+
+# Restore into a separate disposable PostgreSQL database.
+npm run health:archive -- import --id <catalog-uuid> \
+  --target-database-url postgres://restore:password@127.0.0.1:5432/health_hub_restore_test
+
+# Destructive compact-row pruning needs this explicit command plus both
+# HEALTH_ARCHIVE_ENABLED=true and HEALTH_RAW_PRUNING_ENABLED=true.
+npm run health:archive -- run --source-account <uuid> --month 2026-01-01 --execute --prune
+```
+
+Import always requires an explicit target URL. It refuses the current `DATABASE_URL`, remote
+hosts, and targets without a disposable-looking database name unless
+`--allow-production-target` is deliberately supplied. The target must already have migrations and
+the archived source-account row. Imports are bounded and idempotent on compact semantic keys.
 
 ## Verification
 
