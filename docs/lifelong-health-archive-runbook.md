@@ -184,6 +184,22 @@ Disposable resources removed:
 Follow-up actions:
 ```
 
+### Restore-test history
+
+```text
+Date/time (UTC): 2026-07-22 01:01
+Operator: Codex using Philippe's authorized Cloudflare/Coolify/Hetzner sessions
+Release/commit: be1c0ef (implementation branch; not deployed)
+Database dump object (safe name only): pg-dump-health_hub-1784682060.dmp (28,594,936 bytes)
+Archive catalog ID/month/version (no object URL or secrets): Not yet eligible; archive drill pending
+Disposable target: PostgreSQL 16 container fitbit-r2-restore-pg-20260721, no published port
+Database restore result and checks: PASS; R2 download SHA-256 4a79d9dc77438fc8506dd6cab47cabcb88cea043398f6906e2e7d07700154ff1; pg_restore --exit-on-error; 344,453 heart samples, 8,572 calorie intervals, 28 heart daily summaries, 29 sleep sessions, 1 source account
+Archive verify/import result and checks: Pending; raw bucket credential separately passed upload/readback/SHA-256/delete outside locked prefix
+Plaintext cleanup confirmed: Yes; temporary downloaded dump removed
+Disposable resources removed: Yes; PostgreSQL container and host temporary directory confirmed absent
+Follow-up actions: Complete encrypted health archive verify/extract/import drill before archive or pruning approval
+```
+
 ## Failure and rollback behavior
 
 - R2/encryption/upload/readback/verification/catalog failure: record a safe catalog error and keep
