@@ -654,7 +654,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .login-card h2 { margin: 0; font-size: 1.05rem; }
 .login-card > div > p:not(.eyebrow) { margin: 8px 0 0; color: var(--muted); font-size: 0.74rem; line-height: 1.5; }
 .login-form { margin-top: 23px; }
-.username-hint { display: none; }
 .login-form label { display: block; margin-bottom: 7px; color: var(--muted); font-size: 0.68rem; font-weight: 700; }
 .login-form input { width: 100%; min-height: 44px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 9px; color: var(--text); background: var(--surface-soft); }
 .primary-button { min-height: 42px; border: 0; border-radius: 9px; padding: 0 14px; color: var(--accent-ink); background: var(--accent); font-weight: 750; cursor: pointer; }

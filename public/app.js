@@ -700,7 +700,7 @@ $('#datePicker').addEventListener('change', (event) => {
 $('#addContextButton').addEventListener('click', () => setView('journal'));
 $('#syncButton').addEventListener('click', syncNow);
 $('#logoutButton').addEventListener('click', async () => {
-  await fetch('/api/logout', { method: 'POST' });
+  await fetch('/api/auth/sign-out', { method: 'POST' });
   window.location.assign('/login');
 });
 $('#journalForm').addEventListener('submit', saveJournal);

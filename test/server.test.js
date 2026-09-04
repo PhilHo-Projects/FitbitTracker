@@ -4,6 +4,7 @@ import http from 'node:http';
 import test from 'node:test';
 
 import { createApp } from '../server.js';
+import { createTestAuth, OWNER_PASSWORD, signIn, signInCookie } from '../test-support/auth.js';
 
 const env = {
   NODE_ENV: 'test',
@@ -14,7 +15,8 @@ const env = {
 };
 
 async function withServer(fetchImpl, run) {
-  const server = http.createServer(createApp({ env, fetchImpl }));
+  const { auth } = await createTestAuth(env);
+  const server = http.createServer(createApp({ env, fetchImpl, auth }));
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const { port } = server.address();
@@ -42,24 +44,29 @@ test('redirects an unauthenticated dashboard request to login', async () => {
 
 test('rejects an invalid password', async () => {
   await withServer(globalThis.fetch, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: 'wrong' }),
-    });
+    const response = await signIn(baseUrl, { password: 'wrong-password-entirely' });
 
     assert.equal(response.status, 401);
-    assert.deepEqual(await response.json(), { ok: false, message: 'Invalid password' });
+    assert.equal(response.headers.get('set-cookie'), null);
+  });
+});
+
+test('refuses to create additional accounts', async () => {
+  await withServer(globalThis.fetch, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/auth/sign-up/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: baseUrl },
+      body: JSON.stringify({ email: 'intruder@example.test', password: OWNER_PASSWORD, name: 'Intruder' }),
+    });
+
+    assert.equal(response.ok, false);
+    assert.equal(response.headers.get('set-cookie'), null);
   });
 });
 
 test('sets a secure session cookie after a valid login', async () => {
   await withServer(globalThis.fetch, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: env.DASHBOARD_PASSWORD }),
-    });
+    const response = await signIn(baseUrl);
     const cookie = response.headers.get('set-cookie');
 
     assert.equal(response.status, 200);
@@ -83,12 +90,7 @@ test('protects the sleep API and forwards authenticated requests to n8n', async 
     const denied = await fetch(`${baseUrl}/api/sleep`, { method: 'POST' });
     assert.equal(denied.status, 401);
 
-    const login = await fetch(`${baseUrl}/api/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: env.DASHBOARD_PASSWORD }),
-    });
-    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const cookie = await signInCookie(baseUrl);
 
     const response = await fetch(`${baseUrl}/api/sleep`, {
       method: 'POST',

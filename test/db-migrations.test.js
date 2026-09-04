@@ -25,11 +25,13 @@ test('migrations create the permanent health archive tables once', async () => {
     '003_sync_claim_leases.sql',
     '004_lifelong_health_archive.sql',
     '005_health_archive_catalog_month_constraint.sql',
+    '006_better_auth.sql',
   ]);
   assert.deepEqual(second, []);
   assert.deepEqual(
     tables.rows.map(({ table_name: name }) => name),
     [
+      'account',
       'calorie_daily_summaries',
       'calorie_intervals',
       'calorie_intervals_compact',
@@ -43,7 +45,9 @@ test('migrations create the permanent health archive tables once', async () => {
       'journal_entry_revisions',
       'journal_entry_tags',
       'journal_tags',
+      'rateLimit',
       'schema_migrations',
+      'session',
       'sleep_sessions',
       'sleep_stages',
       'source_accounts',
@@ -51,6 +55,8 @@ test('migrations create the permanent health archive tables once', async () => {
       'sync_account_claims',
       'sync_chunks',
       'sync_jobs',
+      'user',
+      'verification',
     ],
   );
 

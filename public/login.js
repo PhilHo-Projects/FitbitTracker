@@ -1,4 +1,5 @@
 const form = document.querySelector('#loginForm');
+const email = document.querySelector('#email');
 const password = document.querySelector('#password');
 const button = document.querySelector('#loginButton');
 const spinner = document.querySelector('#loginSpinner');
@@ -7,6 +8,7 @@ const error = document.querySelector('#loginError');
 
 function setBusy(busy) {
   button.disabled = busy;
+  email.disabled = busy;
   password.disabled = busy;
   spinner.hidden = !busy;
   label.textContent = busy ? 'Signing in…' : 'Open dashboard';
@@ -18,14 +20,14 @@ form.addEventListener('submit', async (event) => {
   setBusy(true);
 
   try {
-    const response = await fetch('/api/login', {
+    const response = await fetch('/api/auth/sign-in/email', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: password.value }),
+      body: JSON.stringify({ email: email.value, password: password.value }),
     });
     const payload = await response.json().catch(() => ({}));
 
-    if (!response.ok || !payload.ok) {
+    if (!response.ok) {
       throw new Error(payload.message || 'Could not sign in');
     }
 

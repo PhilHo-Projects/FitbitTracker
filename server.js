@@ -1,5 +1,5 @@
+import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import express from 'express';
-import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,12 +8,13 @@ import { createHealthArchiveRepository } from './lib/archive/repository.js';
 import { createArchiveObjectStore, createS3ClientFromConfig } from './lib/archive/s3.js';
 import { createHealthArchiveService } from './lib/archive/service.js';
 import { createHealthArchiveWorker } from './lib/archive/worker.js';
+import { createAuth } from './lib/auth.js';
 import { createHealthRepository } from './lib/db/health-repository.js';
 import { createMetricWriter } from './lib/db/metric-writer.js';
 import { createPool, databaseReady } from './lib/db/pool.js';
 import { createAnalysisDatasetService } from './lib/exports/dataset.js';
 import { createExportService } from './lib/exports/service.js';
-import { securityHeaders, validateMutationOrigin, createLoginThrottle } from './lib/http/security.js';
+import { securityHeaders, validateMutationOrigin } from './lib/http/security.js';
 import { createJournalCipher } from './lib/journal/crypto.js';
 import { createJournalRepository } from './lib/journal/repository.js';
 import { createGoogleHealthGateway } from './lib/jobs/google-health-gateway.js';
@@ -23,17 +24,8 @@ import { createExportRouter } from './lib/routes/export-routes.js';
 import { createHealthRouter } from './lib/routes/health-routes.js';
 import { createJournalRouter } from './lib/routes/journal-routes.js';
 import { createSyncRouter } from './lib/routes/sync-routes.js';
-import { createSessionToken, readCookie, verifySessionToken } from './lib/session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SESSION_COOKIE = 'fitbit_session';
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-
-function constantTimeEqual(left, right) {
-  const leftDigest = crypto.createHash('sha256').update(String(left)).digest();
-  const rightDigest = crypto.createHash('sha256').update(String(right)).digest();
-  return crypto.timingSafeEqual(leftDigest, rightDigest);
-}
 
 function parseUpstreamBody(bodyText) {
   try {
@@ -64,6 +56,7 @@ export function createApp(options = {}) {
     exportService = null,
   } = options;
   const pool = options.pool === undefined ? createPool(env) : options.pool;
+  const auth = options.auth === undefined ? createAuth({ pool, env }) : options.auth;
   const healthRepository =
     options.healthRepository ?? (pool
       ? createHealthRepository(pool, {
@@ -85,29 +78,42 @@ export function createApp(options = {}) {
   const publicDir = path.join(__dirname, 'public');
   const webhookUrl = env.N8N_WEBHOOK_URL || '';
   const webhookToken = env.N8N_WEBHOOK_TOKEN || '';
-  const dashboardPassword = env.DASHBOARD_PASSWORD || '';
-  const sessionSecret = env.DASHBOARD_SESSION_SECRET || '';
-  const secureCookie = env.NODE_ENV === 'production';
-  const loginThrottle = createLoginThrottle({ now });
 
   app.disable('x-powered-by');
   if (env.NODE_ENV === 'production') app.set('trust proxy', 1);
   app.use(securityHeaders);
-  app.use(express.json({ limit: '64kb' }));
-  app.use(express.urlencoded({ extended: false, limit: '32kb' }));
   app.use(validateMutationOrigin);
 
-  const hasAuthConfig = () => Boolean(dashboardPassword && sessionSecret);
-  const isAuthenticated = (req) => {
-    const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-    return hasAuthConfig() && verifySessionToken(token, sessionSecret, now());
-  };
-  const requireAuth = (req, res, next) => {
-    if (isAuthenticated(req)) return next();
-    if (req.originalUrl.startsWith('/api/') || req.baseUrl.startsWith('/api')) {
-      return res.status(401).json({ ok: false, message: 'Authentication required' });
+  // Better Auth consumes the raw request body, so it has to be mounted ahead
+  // of the JSON and urlencoded parsers.
+  if (auth) app.all('/api/auth/*', toNodeHandler(auth));
+
+  app.use(express.json({ limit: '64kb' }));
+  app.use(express.urlencoded({ extended: false, limit: '32kb' }));
+
+  const hasAuthConfig = () => Boolean(auth);
+  const sessionFor = async (req) => {
+    if (!auth) return null;
+    try {
+      return await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
+    } catch {
+      return null;
     }
-    return res.redirect('/login');
+  };
+  const requireAuth = async (req, res, next) => {
+    try {
+      const session = await sessionFor(req);
+      if (session?.user) {
+        req.user = session.user;
+        return next();
+      }
+      if (req.originalUrl.startsWith('/api/') || req.baseUrl.startsWith('/api')) {
+        return res.status(401).json({ ok: false, message: 'Authentication required' });
+      }
+      return res.redirect('/login');
+    } catch (error) {
+      return next(error);
+    }
   };
 
   app.get('/healthz', (_req, res) => {
@@ -118,39 +124,14 @@ export function createApp(options = {}) {
     res.status(ready ? 200 : 503).json({ ok: ready, ready });
   });
 
-  app.get('/login', (req, res) => {
-    if (isAuthenticated(req)) return res.redirect('/');
-    return res.sendFile(path.join(publicDir, 'login.html'));
-  });
-
-  app.post('/api/login', loginThrottle.middleware, (req, res) => {
-    if (!hasAuthConfig()) {
-      return res.status(503).json({ ok: false, message: 'Dashboard authentication is not configured' });
+  app.get('/login', async (req, res, next) => {
+    try {
+      const session = await sessionFor(req);
+      if (session?.user) return res.redirect('/');
+      return res.sendFile(path.join(publicDir, 'login.html'));
+    } catch (error) {
+      return next(error);
     }
-    if (!constantTimeEqual(req.body?.password ?? '', dashboardPassword)) {
-      loginThrottle.failed(req.loginThrottleKey);
-      return res.status(401).json({ ok: false, message: 'Invalid password' });
-    }
-    loginThrottle.succeeded(req.loginThrottleKey);
-    const token = createSessionToken(sessionSecret, now(), SESSION_TTL_MS);
-    res.cookie(SESSION_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: secureCookie,
-      maxAge: SESSION_TTL_MS,
-      path: '/',
-    });
-    return res.json({ ok: true });
-  });
-
-  app.post('/api/logout', (_req, res) => {
-    res.clearCookie(SESSION_COOKIE, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: secureCookie,
-      path: '/',
-    });
-    return res.json({ ok: true });
   });
 
   app.get(['/', '/index.html'], requireAuth, (_req, res) => {
@@ -158,8 +139,12 @@ export function createApp(options = {}) {
   });
   app.use(express.static(publicDir, { index: false, maxAge: 0 }));
 
-  app.get('/api/session', requireAuth, (_req, res) => {
-    res.json({ ok: true, authenticated: true });
+  app.get('/api/session', requireAuth, (req, res) => {
+    res.json({
+      ok: true,
+      authenticated: true,
+      user: { email: req.user.email, name: req.user.name },
+    });
   });
   app.get('/api/config', requireAuth, (_req, res) => {
     res.json({
