@@ -20,6 +20,7 @@ import { createJournalRepository } from './lib/journal/repository.js';
 import { createGoogleHealthGateway } from './lib/jobs/google-health-gateway.js';
 import { createSyncRepository } from './lib/jobs/sync-repository.js';
 import { createSyncService } from './lib/jobs/sync-service.js';
+import { createConnectorRouter } from './lib/routes/connector-routes.js';
 import { createExportRouter } from './lib/routes/export-routes.js';
 import { createHealthRouter } from './lib/routes/health-routes.js';
 import { createJournalRouter } from './lib/routes/journal-routes.js';
@@ -54,6 +55,8 @@ export function createApp(options = {}) {
     readinessCheck,
     syncService = null,
     exportService = null,
+    connector = null,
+    oauth = null,
   } = options;
   const pool = options.pool === undefined ? createPool(env) : options.pool;
   const auth = options.auth === undefined ? createAuth({ pool, env }) : options.auth;
@@ -134,7 +137,7 @@ export function createApp(options = {}) {
     }
   });
 
-  app.get(['/', '/index.html'], requireAuth, (_req, res) => {
+  app.get(['/', '/index.html', '/settings'], requireAuth, (_req, res) => {
     res.sendFile(path.join(publicDir, 'index.html'));
   });
   app.use(express.static(publicDir, { index: false, maxAge: 0 }));
@@ -173,6 +176,17 @@ export function createApp(options = {}) {
     app.use('/api/sync', requireAuth, (_req, res) => {
       res.status(503).json({ ok: false, message: 'Synchronization worker is not configured' });
     });
+  }
+  if (connector && oauth) {
+    app.use(
+      '/api/connectors',
+      createConnectorRouter({
+        connector,
+        oauth,
+        secret: env.DASHBOARD_SESSION_SECRET || '',
+        requireAuth,
+      }),
+    );
   }
   if (exportService) {
     app.use('/api/exports', createExportRouter({ service: exportService, requireAuth }));
