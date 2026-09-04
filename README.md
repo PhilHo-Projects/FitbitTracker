@@ -10,7 +10,7 @@ Production URL: `https://fitbit.philippeho.dev`
 
 ```text
 Browser
-  → password-backed Express session
+  → Better Auth session (email and password)
   → PostgreSQL health archive
   → resumable sync worker
   → Header-Auth n8n gateway
@@ -50,7 +50,8 @@ n8n gateway at `https://n8n.philippeho.dev/webhook/health-hub-sync`, and:
 4. Builds Tailwind.
 5. Starts the application at `http://localhost:3000`.
 
-Local password: `0000`
+Sign in with the owner account from `.env.local` (`DASHBOARD_OWNER_EMAIL` and
+`DASHBOARD_OWNER_PASSWORD`). `npm run dev` creates it on first start if it is missing.
 
 Local development uses the existing remote n8n gateway; it does not install or run n8n locally.
 Automatic sync scheduling is disabled locally, so all syncs are started manually through the app.
@@ -63,7 +64,7 @@ For deterministic offline fixtures with no n8n dependency:
 npm run dev:fixtures
 ```
 
-Both local modes use password `0000` and separate PostgreSQL volumes:
+Both local modes use the same owner account and separate PostgreSQL volumes:
 `health-hub-postgres-live` for `npm run dev`, and `health-hub-postgres-fixtures` for
 `npm run dev:fixtures`. `npm run dev:live` remains an alias for `npm run dev`.
 Set `SKIP_LOCAL_DATABASE=true` only when `DATABASE_URL` points to a database managed separately.
@@ -78,7 +79,7 @@ For a lightweight UI preview backed by in-memory deterministic fixtures:
 npm run preview
 ```
 
-This starts `http://127.0.0.1:4173` with the same local password.
+This starts `http://127.0.0.1:4173` with the same local owner account.
 
 ## Product workspaces
 
@@ -227,8 +228,9 @@ restore drills are in [`docs/lifelong-health-archive-runbook.md`](docs/lifelong-
 | `DATABASE_URL` | Yes | PostgreSQL archive connection |
 | `DATABASE_POOL_SIZE` | No | Pool size; defaults to 10 |
 | `DATABASE_SSL` | No | Set `true` when the database requires TLS |
-| `DASHBOARD_PASSWORD` | Yes | Private dashboard password |
-| `DASHBOARD_SESSION_SECRET` | Yes | HMAC key for 12-hour sessions |
+| `DASHBOARD_SESSION_SECRET` | Yes | Better Auth signing secret |
+| `PUBLIC_ORIGIN` | Yes | Public origin used for cookies and CSRF checks |
+| `DASHBOARD_SESSION_TTL_SECONDS` | No | Session lifetime; defaults to 43200 (12 hours) |
 | `JOURNAL_ENCRYPTION_KEYS` | Yes | Versioned AES-256-GCM keyring |
 | `N8N_WEBHOOK_URL` | For live sync | Secured `health-hub-sync` gateway |
 | `N8N_WEBHOOK_TOKEN` | For live sync | Header Auth token shared with n8n |

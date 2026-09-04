@@ -4,6 +4,10 @@ import { createInterface } from 'node:readline/promises';
 import { createAuth, authConstants } from '../lib/auth.js';
 import { createPool } from '../lib/db/pool.js';
 
+// --if-missing makes this safe to run on every start: it succeeds quietly when
+// an account already exists, and never blocks on a prompt.
+const ifMissing = process.argv.includes('--if-missing');
+
 function ask(question, { hidden = false } = {}) {
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   const write = rl.output.write.bind(rl.output);
@@ -26,8 +30,17 @@ if (!process.env.DASHBOARD_SESSION_SECRET) throw new Error('DASHBOARD_SESSION_SE
 try {
   const existing = await pool.query('SELECT email FROM "user" ORDER BY "createdAt" LIMIT 1');
   if (existing.rowCount > 0) {
-    console.error(`An account already exists (${existing.rows[0].email}). Refusing to create a second owner.`);
-    process.exitCode = 1;
+    const message = `An account already exists (${existing.rows[0].email}).`;
+    if (ifMissing) console.log(message);
+    else {
+      console.error(`${message} Refusing to create a second owner.`);
+      process.exitCode = 1;
+    }
+  } else if (ifMissing && !(process.env.DASHBOARD_OWNER_EMAIL && process.env.DASHBOARD_OWNER_PASSWORD)) {
+    console.log(
+      'No owner account yet. Set DASHBOARD_OWNER_EMAIL and DASHBOARD_OWNER_PASSWORD, ' +
+        'or run `npm run auth:create-owner` to be prompted.',
+    );
   } else {
     const email = (process.env.DASHBOARD_OWNER_EMAIL || (await ask('Owner email: '))).trim();
     const password = process.env.DASHBOARD_OWNER_PASSWORD || (await ask('Owner password: ', { hidden: true }));

@@ -70,13 +70,14 @@ function run(command, args) {
 
 await waitForDatabase();
 run('node', ['scripts/migrate.mjs']);
+run('node', ['scripts/create-owner.mjs', '--if-missing']);
 if (config.seedFixtures) run('node', ['scripts/seed.mjs']);
 run('npm', ['run', 'build']);
 
 console.log(
   mode === 'live'
-    ? 'Starting with the authenticated n8n gateway from .env.local (password: 0000)'
-    : 'Starting local fixture mode at http://localhost:3000 (password: 0000)',
+    ? 'Starting with the authenticated n8n gateway from .env.local'
+    : 'Starting local fixture mode at http://localhost:3000',
 );
 const child = spawn('node', ['server.js'], { env: config.env, stdio: 'inherit' });
 for (const signal of ['SIGINT', 'SIGTERM']) {
