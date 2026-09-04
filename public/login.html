@@ -48,14 +48,14 @@
         </div>
 
         <form id="loginForm" class="login-form">
+          <label for="email">Email</label>
           <input
-            class="username-hint"
-            name="username"
-            type="text"
-            value="fitbit-dashboard"
+            id="email"
+            name="email"
+            type="email"
             autocomplete="username"
-            tabindex="-1"
-            aria-hidden="true"
+            required
+            autofocus
           />
           <label for="password">Password</label>
           <input
@@ -64,7 +64,6 @@
             type="password"
             autocomplete="current-password"
             required
-            autofocus
           />
           <p id="loginError" class="form-error" role="alert" hidden></p>
           <button id="loginButton" class="primary-button primary-button-wide" type="submit">

@@ -19,7 +19,10 @@ Do not replace the working legacy container until the health hub has passed its 
    - `DATABASE_SSL=false` for the internal Docker network.
    - `DATABASE_POOL_SIZE=5`.
    - `JOURNAL_ENCRYPTION_KEYS` with a new versioned 32-byte AES key.
-   - The existing production `DASHBOARD_PASSWORD` and `DASHBOARD_SESSION_SECRET`.
+   - The existing production `DASHBOARD_SESSION_SECRET`, plus `PUBLIC_ORIGIN`
+     set to the deployment's public URL.
+   - After migrating, run `npm run auth:create-owner` once to create the owner
+     account; `DASHBOARD_PASSWORD` is no longer used.
    - `N8N_WEBHOOK_URL=https://n8n.philippeho.dev/webhook/health-hub-sync`.
    - The matching health-hub header-auth token in `N8N_WEBHOOK_TOKEN`.
    - `SYNC_SCHEDULE_ENABLED=false` until the first bounded sync succeeds.

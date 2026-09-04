@@ -15,6 +15,7 @@
     "migrate": "node scripts/migrate.mjs",
     "health:compact": "node scripts/compact-health.mjs",
     "health:archive": "node scripts/health-archive.mjs",
+    "auth:create-owner": "node scripts/create-owner.mjs",
     "seed": "node scripts/seed.mjs",
     "start": "node scripts/start.mjs",
     "test": "node --test"
@@ -22,6 +23,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1092.0",
     "archiver": "^7.0.1",
+    "better-auth": "^1.7.1",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
     "pg": "^8.16.3",

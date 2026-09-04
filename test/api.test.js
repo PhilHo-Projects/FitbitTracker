@@ -4,6 +4,7 @@ import http from 'node:http';
 import test from 'node:test';
 
 import { createApp } from '../server.js';
+import { createTestAuth, signIn, signInCookie } from '../test-support/auth.js';
 
 const env = {
   NODE_ENV: 'test',
@@ -76,7 +77,8 @@ function services() {
 }
 
 async function withServer(options, run) {
-  const server = http.createServer(createApp({ env, ...options }));
+  const { auth } = await createTestAuth(env);
+  const server = http.createServer(createApp({ env, auth, ...options }));
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const { port } = server.address();
@@ -90,12 +92,7 @@ async function withServer(options, run) {
 }
 
 async function login(baseUrl) {
-  const response = await fetch(`${baseUrl}/api/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password: env.DASHBOARD_PASSWORD }),
-  });
-  return response.headers.get('set-cookie').split(';')[0];
+  return signInCookie(baseUrl);
 }
 
 test('authenticated health APIs expose dashboard and closed-open metric ranges', async () => {
@@ -171,18 +168,10 @@ test('login throttling and database readiness are explicit', async () => {
     },
     async (baseUrl) => {
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        const response = await fetch(`${baseUrl}/api/login`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ password: 'wrong' }),
-        });
+        const response = await signIn(baseUrl, { password: 'wrong-password-entirely' });
         assert.equal(response.status, 401);
       }
-      const throttled = await fetch(`${baseUrl}/api/login`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ password: 'wrong' }),
-      });
+      const throttled = await signIn(baseUrl, { password: 'wrong-password-entirely' });
       const ready = await fetch(`${baseUrl}/readyz`);
 
       assert.equal(throttled.status, 429);
