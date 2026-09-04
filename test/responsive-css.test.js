@@ -39,3 +39,23 @@ test('phone sleep summaries collapse to two columns and trend rails stay full wi
   assert.match(mobile, /\.sleep-trend-rail\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s);
   assert.match(mobile, /\.sleep-trend-tabs button\s*\{[^}]*min-height:\s*44px/s);
 });
+
+test('data inspector stays full-width while dense record tables scroll internally', async () => {
+  const css = await readFile(new URL('../src/input.css', import.meta.url), 'utf8');
+
+  assert.match(css, /\.inspector-board\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s);
+  assert.match(css, /\.inspector-table-wrap\s*\{[^}]*overflow-x:\s*auto/s);
+  assert.match(css, /\.inspector-table\s*\{[^}]*min-width:/s);
+});
+
+test('phone inspector disclosures keep touch targets and stack technical layers', async () => {
+  const css = await readFile(new URL('../src/input.css', import.meta.url), 'utf8');
+  const mobile = css.slice(css.indexOf('@media (max-width: 680px)'));
+
+  assert.match(mobile, /\.inspector-category\s*>\s*summary\s*\{[^}]*min-height:\s*64px/s);
+  assert.match(mobile, /\.inspector-layer-heading\s*\{[^}]*display:\s*block/s);
+  assert.match(
+    mobile,
+    /\.inspector-fact-grid,\s*\.inspector-age-grid\s*\{[^}]*grid-template-columns:\s*1fr/s,
+  );
+});

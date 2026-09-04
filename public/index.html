@@ -150,6 +150,46 @@
             </div>
             <button id="addContextButton" class="button button-primary" type="button">Add context</button>
           </section>
+
+          <section id="dataInspectorBoard" class="inspector-board" aria-labelledby="dataInspectorHeading">
+            <div class="inspector-board-heading">
+              <div>
+                <p class="view-kicker">Trace the numbers</p>
+                <h2 id="dataInspectorHeading">Data inspector</h2>
+                <p>See what Google supplied, what this archive stored, what the application derived, and what remains unknown.</p>
+              </div>
+              <span class="inspector-board-note">Read-only · technical detail stays folded</span>
+            </div>
+            <div class="inspector-categories">
+              <details class="inspector-category" data-inspector-category="sleep">
+                <summary>
+                  <span><strong>Sleep</strong><small>Sessions, stages, transformations, and retained source shape</small></span>
+                  <span aria-hidden="true">Nerd details</span>
+                </summary>
+                <div class="inspector-category-body" data-inspector-content>
+                  <p class="inspector-empty">Open to inspect this date’s sleep data.</p>
+                </div>
+              </details>
+              <details class="inspector-category" data-inspector-category="heart">
+                <summary>
+                  <span><strong>Heart</strong><small>Samples, daily statistics, five-minute coverage, and gaps</small></span>
+                  <span aria-hidden="true">Nerd details</span>
+                </summary>
+                <div class="inspector-category-body" data-inspector-content>
+                  <p class="inspector-empty">Open to inspect this date’s heart data.</p>
+                </div>
+              </details>
+              <details class="inspector-category" data-inspector-category="calories">
+                <summary>
+                  <span><strong>Calories</strong><small>Active, basal, derived totals, and per-stream coverage</small></span>
+                  <span aria-hidden="true">Nerd details</span>
+                </summary>
+                <div class="inspector-category-body" data-inspector-content>
+                  <p class="inspector-empty">Open to inspect this date’s calorie data.</p>
+                </div>
+              </details>
+            </div>
+          </section>
         </div>
       </section>
 

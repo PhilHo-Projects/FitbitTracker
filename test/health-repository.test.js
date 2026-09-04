@@ -114,6 +114,343 @@ test('metric workspaces expose closed-open ranges at day and detail resolutions'
   await pool.end();
 });
 
+test('calorie inspector separates source streams and explains the derived total', async () => {
+  const pool = await createFixtureDatabase();
+  await seedFixtures(pool, { anchorDate: '2026-07-16' });
+  const sourceAccountId = (
+    await pool.query('SELECT id FROM source_accounts ORDER BY created_at LIMIT 1')
+  ).rows[0].id;
+  await pool.query(
+    `UPDATE calorie_intervals
+     SET device = $1
+     WHERE source_account_id = $2
+       AND civil_date = '2026-07-16'
+       AND metric_type = 'active'
+       AND start_time = '2026-07-16T00:00:00Z'`,
+    [
+      { displayName: 'Pixel Watch', identifier: 'private-device-id' },
+      sourceAccountId,
+    ],
+  );
+  const repository = createHealthRepository(pool);
+
+  const inspector = await repository.getInspector?.('calories', '2026-07-16', {
+    limit: 100,
+  });
+
+  assert.equal(inspector?.category, 'calories');
+  assert.equal(inspector?.status, 'available');
+  assert.deepEqual(inspector?.sourceFacts.dataTypes, [
+    'active-energy-burned',
+    'basal-energy-burned',
+  ]);
+  assert.equal(inspector?.sourceFacts.recordCount, 48);
+  assert.deepEqual(
+    inspector?.coverage.streams.map(({ name, recordCount }) => ({ name, recordCount })),
+    [
+      { name: 'active', recordCount: 24 },
+      { name: 'basal', recordCount: 24 },
+      { name: 'total', recordCount: 0 },
+    ],
+  );
+  assert.deepEqual(inspector?.derived.find(({ field }) => field === 'totalKcal'), {
+    field: 'totalKcal',
+    value: 2448,
+    unit: 'kcal',
+    formula: 'activeKcal + basalKcal',
+    inputFields: ['activeKcal', 'basalKcal'],
+    inputState: { activeKcal: 'present', basalKcal: 'present' },
+  });
+  assert.equal(inspector?.records.total, 48);
+  assert.equal(inspector?.records.items.length, 48);
+  assert.equal(inspector?.records.nextCursor, null);
+  assert.deepEqual(Object.keys(inspector?.records.items[0] ?? {}), [
+    'metricType',
+    'startTime',
+    'endTime',
+    'utcOffsetSeconds',
+    'kilocalories',
+    'device',
+  ]);
+  assert.deepEqual(inspector?.records.items[0].device, {
+    displayName: 'Pixel Watch',
+    identifier: '[redacted]',
+  });
+  assert.equal(JSON.stringify(inspector).includes('75ce6554-70c7-48be-a688-d0079384fcb1'), false);
+  assert.equal(JSON.stringify(inspector).includes('fixture-calorie-'), false);
+  assert.equal(JSON.stringify(inspector).includes('private-device-id'), false);
+
+  await pool.end();
+});
+
+test('heart inspector labels source facts and application-derived daily statistics', async () => {
+  const pool = await createFixtureDatabase();
+  await seedFixtures(pool, { anchorDate: '2026-07-16' });
+  const repository = createHealthRepository(pool);
+
+  const inspector = await repository.getInspector?.('heart', '2026-07-16', { limit: 100 });
+
+  assert.equal(inspector?.category, 'heart');
+  assert.equal(inspector?.status, 'available');
+  assert.deepEqual(inspector?.sourceFacts.dataTypes, [
+    'heart-rate',
+    'daily-resting-heart-rate',
+  ]);
+  assert.equal(inspector?.normalized.summary.restingBpm, 58);
+  assert.equal(inspector?.normalized.summary.restingDerived, false);
+  assert.deepEqual(
+    inspector?.derived.map(({ field, formula }) => ({ field, formula })),
+    [
+      { field: 'averageBpm', formula: 'sum(beatsPerMinute) / sampleCount' },
+      { field: 'minimumBpm', formula: 'min(beatsPerMinute)' },
+      { field: 'maximumBpm', formula: 'max(beatsPerMinute)' },
+      { field: 'sampleCount', formula: 'count(heart-rate samples)' },
+      { field: 'coverageSeconds', formula: 'occupied 5-minute buckets × 300 seconds' },
+      {
+        field: 'populationStandardDeviationBpm',
+        formula: 'sqrt(mean(bpm²) - mean(bpm)²)',
+      },
+      { field: 'percentilesBpm', formula: 'continuous p05, p50, and p95 of daily samples' },
+    ],
+  );
+  assert.equal(inspector?.coverage.civilDaySeconds, 86400);
+  assert.equal(inspector?.coverage.streams[0].coverageSeconds, 12000);
+  assert.equal(inspector?.coverage.streams[0].gapSeconds, 74400);
+  assert.equal(inspector?.records.total, 48);
+  assert.deepEqual(Object.keys(inspector?.records.items[0] ?? {}), [
+    'sampledAt',
+    'utcOffsetSeconds',
+    'beatsPerMinute',
+    'device',
+  ]);
+  assert.equal(inspector?.sourceJson.state, 'original');
+
+  await pool.end();
+});
+
+test('sleep inspector distinguishes normalized retained source from original Google JSON', async () => {
+  const pool = await createFixtureDatabase();
+  await seedFixtures(pool, { anchorDate: '2026-07-16' });
+  const repository = createHealthRepository(pool);
+
+  const inspector = await repository.getInspector?.('sleep', '2026-07-16', { limit: 100 });
+
+  assert.equal(inspector?.category, 'sleep');
+  assert.equal(inspector?.status, 'available');
+  assert.deepEqual(inspector?.sourceFacts.dataTypes, ['sleep']);
+  assert.equal(inspector?.sourceJson.state, 'normalized-only');
+  assert.match(inspector?.sourceJson.reason, /normalized representation/i);
+  assert.deepEqual(inspector?.normalized.summary, {
+    date: '2026-07-16',
+    startTime: '2026-07-16T03:17:00.000Z',
+    endTime: '2026-07-16T09:54:00.000Z',
+    startOffsetSeconds: -14400,
+    endOffsetSeconds: -14400,
+    sleepType: 'stages',
+    isNap: false,
+    durationMinutes: 397,
+    minutesAsleep: 379,
+    minutesAwake: 18,
+    efficiency: 95.47,
+    timeToSleepMinutes: 16,
+    awakeEpisodes: 2,
+    device: { manufacturer: 'Fixture', model: 'Deterministic Watch' },
+  });
+  assert.deepEqual(
+    inspector?.derived.map(({ field, formula }) => ({ field, formula })),
+    [
+      { field: 'durationMinutes', formula: 'stored durationSeconds / 60' },
+      { field: 'minutesAsleep', formula: 'stored asleepSeconds / 60' },
+      { field: 'minutesAwake', formula: 'stored awakeSeconds / 60' },
+      { field: 'efficiency', formula: 'minutesAsleep / durationMinutes × 100' },
+      { field: 'stagePercentages', formula: 'stage minutes / durationMinutes × 100' },
+      { field: 'awakeEpisodes', formula: 'count(awake stage intervals)' },
+    ],
+  );
+  assert.equal(inspector?.coverage.streams[0].coverageSeconds, 23820);
+  assert.equal(inspector?.coverage.streams[0].gapSeconds, 0);
+  assert.equal(inspector?.records.total, 12);
+  assert.deepEqual(Object.keys(inspector?.records.items[0] ?? {}), [
+    'sequence',
+    'stageType',
+    'startTime',
+    'endTime',
+    'durationMinutes',
+  ]);
+
+  await pool.end();
+});
+
+test('inspector reports archive-only heart detail as unavailable without reconstruction', async () => {
+  const pool = await createFixtureDatabase();
+  await seedFixtures(pool, { anchorDate: '2026-07-16' });
+  const sourceAccountId = (
+    await pool.query('SELECT id FROM source_accounts ORDER BY created_at LIMIT 1')
+  ).rows[0].id;
+  await pool.query(
+    `INSERT INTO heart_rate_daily_summaries (
+       id, source_account_id, civil_date, resting_bpm, average_bpm, minimum_bpm,
+       maximum_bpm, sample_count, coverage_seconds, resting_derived, source_fields
+     ) VALUES ($1, $2, '2026-01-15', 55, 66, 48, 110, 720, 43200, false, '{}')`,
+    ['94000000-0000-4000-8000-000000000001', sourceAccountId],
+  );
+  await pool.query(
+    `INSERT INTO health_archive_catalog (
+       id, source_account_id, archive_month, archive_version, is_active, state,
+       heart_sample_count, calorie_interval_count, verified_at, pruned_at
+     ) VALUES ($1, $2, '2026-01-01', 1, true, 'pruned', 720, 0, $3, $3)`,
+    [
+      '94000000-0000-4000-8000-000000000002',
+      sourceAccountId,
+      '2026-04-25T03:00:00Z',
+    ],
+  );
+  const repository = createHealthRepository(pool);
+
+  const inspector = await repository.getInspector?.('heart', '2026-01-15');
+
+  assert.equal(inspector?.status, 'partial');
+  assert.equal(inspector?.coverage.storedState, 'summary-only');
+  assert.equal(inspector?.records.total, 0);
+  assert.equal(inspector?.sourceJson.state, 'unavailable');
+  assert.match(inspector?.sourceJson.reason, /encrypted archive/i);
+
+  await pool.end();
+});
+
+test('inspector source pages are redacted, bounded, and cursor-driven', async () => {
+  const pool = await createFixtureDatabase();
+  await seedFixtures(pool, { anchorDate: '2026-07-16' });
+  const sourceAccountId = (
+    await pool.query('SELECT id FROM source_accounts ORDER BY created_at LIMIT 1')
+  ).rows[0].id;
+  await pool.query(
+    `UPDATE calorie_intervals
+     SET source_fields = $1
+     WHERE source_account_id = $2
+       AND civil_date = '2026-07-16'
+       AND metric_type = 'active'
+       AND start_time = '2026-07-16T00:00:00Z'`,
+    [
+      {
+        dataPointName: 'accounts/private/dataPoints/private',
+        activeEnergyBurned: {
+          interval: {
+            startTime: '2026-07-16T00:00:00Z',
+            endTime: '2026-07-16T01:00:00Z',
+          },
+          kcal: 29.5,
+        },
+        dataSource: {
+          device: { displayName: 'Pixel Watch', formFactor: 'FORM_FACTOR_WATCH' },
+          application: { webClientId: 'private-client-id' },
+        },
+        accessToken: 'private-token',
+      },
+      sourceAccountId,
+    ],
+  );
+  const repository = createHealthRepository(pool);
+
+  const first = await repository.getInspectorSource?.('calories', '2026-07-16', {
+    limit: 1,
+  });
+  const second = await repository.getInspectorSource?.('calories', '2026-07-16', {
+    limit: 1,
+    cursor: first?.nextCursor,
+  });
+
+  assert.equal(first?.state, 'original');
+  assert.equal(first?.total, 48);
+  assert.equal(first?.items.length, 1);
+  assert.ok(first?.nextCursor);
+  assert.deepEqual(Object.keys(first?.items[0] ?? {}), [
+    'recordType',
+    'dataType',
+    'locator',
+    'source',
+  ]);
+  assert.equal(first?.items[0].source.dataPointName, '[redacted]');
+  assert.equal(first?.items[0].source.accessToken, '[redacted]');
+  assert.equal(first?.items[0].source.dataSource.application.webClientId, '[redacted]');
+  assert.equal(first?.items[0].source.dataSource.device.displayName, 'Pixel Watch');
+  assert.equal(first?.items[0].source.activeEnergyBurned.kcal, 29.5);
+  assert.notDeepEqual(first?.items[0].locator, second?.items[0].locator);
+  assert.equal(JSON.stringify(first).includes('private-client-id'), false);
+  assert.equal(JSON.stringify(first).includes('private-token'), false);
+
+  await assert.rejects(
+    repository.getInspectorSource?.('heart', '2026-07-16', {
+      cursor: first?.nextCursor,
+    }),
+    /cursor/i,
+  );
+
+  await pool.end();
+});
+
+test('calorie inspector keeps returned zero distinct from a missing stream', async () => {
+  const pool = await createFixtureDatabase();
+  await seedFixtures(pool, { anchorDate: '2026-07-16' });
+  const sourceAccountId = (
+    await pool.query('SELECT id FROM source_accounts ORDER BY created_at LIMIT 1')
+  ).rows[0].id;
+  await pool.query(
+    `UPDATE calorie_intervals
+     SET kilocalories = 0
+     WHERE source_account_id = $1 AND civil_date = '2026-07-16' AND metric_type = 'active'`,
+    [sourceAccountId],
+  );
+  await pool.query(
+    `DELETE FROM calorie_intervals
+     WHERE source_account_id = $1 AND civil_date = '2026-07-16' AND metric_type = 'basal'`,
+    [sourceAccountId],
+  );
+  const repository = createHealthRepository(pool);
+
+  const inspector = await repository.getInspector('calories', '2026-07-16');
+  const active = inspector.coverage.streams.find(({ name }) => name === 'active');
+  const basal = inspector.coverage.streams.find(({ name }) => name === 'basal');
+
+  assert.equal(active.valueState, 'zero');
+  assert.match(active.zeroSemantics, /does not prove the device was worn/i);
+  assert.equal(basal.valueState, 'missing');
+  assert.match(basal.zeroSemantics, /not treated as measured zero/i);
+  assert.equal(basal.recordCount, 0);
+
+  await pool.end();
+});
+
+test('missing inspector data still reports the latest successful sync age', async () => {
+  const pool = await createFixtureDatabase();
+  await seedFixtures(pool, { anchorDate: '2026-07-16' });
+  const sourceAccountId = (
+    await pool.query('SELECT id FROM source_accounts ORDER BY created_at LIMIT 1')
+  ).rows[0].id;
+  await pool.query(
+    `INSERT INTO sync_jobs (
+       id, source_account_id, job_type, status, metrics, requested_by, finished_at
+     ) VALUES ($1, $2, 'recent', 'completed', '[]', 'test', $3)`,
+    [
+      '95000000-0000-4000-8000-000000000001',
+      sourceAccountId,
+      '2026-07-17T01:02:03Z',
+    ],
+  );
+  const repository = createHealthRepository(pool);
+
+  const inspector = await repository.getInspector('calories', '2026-06-01');
+
+  assert.equal(inspector.status, 'missing');
+  assert.equal(inspector.dataAge.lastSuccessfulSync, '2026-07-17T01:02:03.000Z');
+  assert.equal(inspector.dataAge.normalizedUpdatedAt, null);
+  assert.equal(inspector.dataAge.sourceUpdatedAt, null);
+  assert.equal(inspector.sourceFacts.recordCount, 0);
+  assert.deepEqual(inspector.records, { items: [], total: 0, nextCursor: null });
+
+  await pool.end();
+});
+
 test('heart ranges expose cold availability and combine permanent daily statistics exactly', async () => {
   const pool = await createFixtureDatabase();
   await seedFixtures(pool, { anchorDate: '2026-07-16' });

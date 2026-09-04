@@ -11,6 +11,13 @@ import {
   sleepStageBreakdown,
   sleepTrendRange,
 } from './health-ui.js';
+import {
+  inspectorCategoryMarkup,
+  inspectorEndpoint,
+  inspectorRecordRows,
+  needsInspectorLoad,
+  renderSourceJson,
+} from './inspector-ui.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -128,6 +135,146 @@ function updateDateControls() {
   $('#exportEnd').value ||= shiftDate(state.selectedDate, 1);
 }
 
+function resetInspectorBoardForDate() {
+  $$('[data-inspector-category]').forEach((details) => {
+    if (!details.dataset.loadedDate || details.dataset.loadedDate === state.selectedDate) return;
+    details.open = false;
+    delete details.dataset.loadedDate;
+    const content = $('[data-inspector-content]', details);
+    content.innerHTML = `<p class="inspector-empty">Open to inspect this date’s ${escapeHtml(details.dataset.inspectorCategory)} data.</p>`;
+  });
+}
+
+function appendSourcePage(content, page, { clear = false } = {}) {
+  if (clear) content.replaceChildren();
+  $('[data-load-inspector-source]', content)?.remove();
+
+  if (page.reason && clear) {
+    const note = document.createElement('p');
+    note.className = 'inspector-source-note';
+    note.textContent = page.reason;
+    content.append(note);
+  }
+  if (!page.items?.length && !page.reason) {
+    const empty = document.createElement('p');
+    empty.className = 'inspector-empty';
+    empty.textContent = 'No retained source JSON records are available for this page.';
+    content.append(empty);
+  }
+  for (const item of page.items ?? []) {
+    const record = document.createElement('article');
+    record.className = 'inspector-json-record';
+    const heading = document.createElement('div');
+    const title = document.createElement('strong');
+    const dataType = document.createElement('code');
+    title.textContent = item.recordType;
+    dataType.textContent = item.dataType;
+    heading.append(title, dataType);
+    const pre = document.createElement('pre');
+    renderSourceJson(pre, item);
+    record.append(heading, pre);
+    content.append(record);
+  }
+  if (page.nextCursor) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'button button-secondary button-compact inspector-load-more';
+    button.dataset.loadInspectorSource = '';
+    button.dataset.cursor = page.nextCursor;
+    button.textContent = 'Load more source JSON';
+    content.append(button);
+  }
+}
+
+async function loadInspectorSource(sourceDetails, categoryDetails, cursor = null) {
+  if (!sourceDetails.open || sourceDetails.dataset.sourceState === 'unavailable') return;
+  const requestedDate = state.selectedDate;
+  if (!cursor && sourceDetails.dataset.loadedDate === requestedDate) return;
+  const content = $('[data-inspector-source-content]', sourceDetails);
+  if (!cursor) {
+    content.textContent = 'Loading redacted source JSON…';
+    sourceDetails.setAttribute('aria-busy', 'true');
+  }
+  try {
+    const page = await fetchJson(
+      inspectorEndpoint(categoryDetails.dataset.inspectorCategory, requestedDate, {
+        source: true,
+        cursor,
+      }),
+    );
+    if (state.selectedDate !== requestedDate) return;
+    appendSourcePage(content, page, { clear: !cursor });
+    sourceDetails.dataset.loadedDate = requestedDate;
+  } catch (error) {
+    if (!cursor) content.replaceChildren();
+    const message = document.createElement('p');
+    message.className = 'inspector-empty error-copy';
+    message.textContent = error.message;
+    content.append(message);
+  } finally {
+    sourceDetails.removeAttribute('aria-busy');
+  }
+}
+
+async function loadInspectorCategory(details) {
+  if (!needsInspectorLoad({
+    open: details.open,
+    loadedDate: details.dataset.loadedDate,
+    selectedDate: state.selectedDate,
+  })) return;
+  const requestedDate = state.selectedDate;
+  const category = details.dataset.inspectorCategory;
+  const content = $('[data-inspector-content]', details);
+  content.textContent = `Loading ${category} details…`;
+  details.setAttribute('aria-busy', 'true');
+  try {
+    const data = await fetchJson(inspectorEndpoint(category, requestedDate));
+    if (state.selectedDate !== requestedDate || !details.open) return;
+    content.innerHTML = inspectorCategoryMarkup(data);
+    details.dataset.loadedDate = requestedDate;
+    const sourceDetails = $('[data-inspector-source]', content);
+    sourceDetails?.addEventListener('toggle', () => {
+      if (sourceDetails.open) loadInspectorSource(sourceDetails, details);
+    });
+  } catch (error) {
+    content.textContent = '';
+    const message = document.createElement('p');
+    message.className = 'inspector-empty error-copy';
+    message.textContent = error.message;
+    content.append(message);
+  } finally {
+    details.removeAttribute('aria-busy');
+  }
+}
+
+async function loadMoreInspectorRecords(button, details) {
+  const requestedDate = state.selectedDate;
+  button.disabled = true;
+  try {
+    const page = await fetchJson(
+      inspectorEndpoint(details.dataset.inspectorCategory, requestedDate, {
+        cursor: button.dataset.cursor,
+      }),
+    );
+    if (state.selectedDate !== requestedDate) return;
+    const table = $('[data-inspector-record-table]', details);
+    const fields = $$('thead th', table).map((cell) => cell.textContent);
+    $('tbody', table).insertAdjacentHTML(
+      'beforeend',
+      inspectorRecordRows(page.records.items, fields),
+    );
+    if (page.records.nextCursor) {
+      button.dataset.cursor = page.records.nextCursor;
+      button.disabled = false;
+    } else {
+      button.remove();
+    }
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message);
+  }
+}
+
 function renderStageSummary(sleep) {
   const stages = sleepStageBreakdown(sleep.stageSummary, sleep.durationMinutes);
   $('#todaySleepBar').innerHTML = stages
@@ -202,6 +349,7 @@ function renderToday(data, journal) {
 
 async function loadToday() {
   showNotice();
+  resetInspectorBoardForDate();
   $('#todayLoading').hidden = false;
   $('#todayContent').hidden = true;
   const end = shiftDate(state.selectedDate, 1);
@@ -673,6 +821,22 @@ $('#sleepWorkspace').addEventListener('click', (event) => {
   if (!button || button.dataset.sleepTrendPeriod === state.sleepTrendPeriod) return;
   state.sleepTrendPeriod = button.dataset.sleepTrendPeriod;
   loadSleepWorkspace();
+});
+
+$$('[data-inspector-category]').forEach((details) => {
+  details.addEventListener('toggle', () => {
+    if (details.open) loadInspectorCategory(details);
+  });
+});
+$('#dataInspectorBoard').addEventListener('click', (event) => {
+  const recordsButton = event.target.closest('[data-load-inspector-records]');
+  const sourceButton = event.target.closest('[data-load-inspector-source]');
+  const categoryDetails = event.target.closest('[data-inspector-category]');
+  if (recordsButton && categoryDetails) loadMoreInspectorRecords(recordsButton, categoryDetails);
+  if (sourceButton && categoryDetails) {
+    const sourceDetails = sourceButton.closest('[data-inspector-source]');
+    loadInspectorSource(sourceDetails, categoryDetails, sourceButton.dataset.cursor);
+  }
 });
 
 $('#previousDate').addEventListener('click', () => {

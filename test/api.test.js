@@ -38,6 +38,19 @@ function services() {
         resolution,
         days: [],
       }),
+      getInspector: async (category, date, options) => ({
+        category,
+        date,
+        page: options,
+        status: 'available',
+      }),
+      getInspectorSource: async (category, date, options) => ({
+        category,
+        date,
+        page: options,
+        state: 'original',
+        items: [],
+      }),
       getArchiveStatus: async () => ({
         configured: true,
         pruningEnabled: false,
@@ -125,6 +138,55 @@ test('authenticated health APIs expose dashboard and closed-open metric ranges',
     assert.equal((await archiveStatusResponse.json()).data.configured, true);
     assert.match(dashboardResponse.headers.get('content-security-policy'), /default-src 'self'/);
     assert.equal(dashboardResponse.headers.get('cache-control'), 'no-store');
+  });
+});
+
+test('data inspector APIs are authenticated and validate category, date, and page bounds', async () => {
+  await withServer(services(), async (baseUrl) => {
+    const denied = await fetch(
+      `${baseUrl}/api/inspector/calories?date=2026-07-16`,
+    );
+    const cookie = await login(baseUrl);
+    const inspector = await fetch(
+      `${baseUrl}/api/inspector/calories?date=2026-07-16&limit=500`,
+      { headers: { cookie } },
+    );
+    const source = await fetch(
+      `${baseUrl}/api/inspector/heart/source?date=2026-07-16&limit=500&cursor=opaque`,
+      { headers: { cookie } },
+    );
+    const invalidCategory = await fetch(
+      `${baseUrl}/api/inspector/oxygen?date=2026-07-16`,
+      { headers: { cookie } },
+    );
+    const invalidDate = await fetch(
+      `${baseUrl}/api/inspector/sleep?date=not-a-date`,
+      { headers: { cookie } },
+    );
+    const invalidCalendarDate = await fetch(
+      `${baseUrl}/api/inspector/sleep?date=2026-02-31`,
+      { headers: { cookie } },
+    );
+
+    assert.equal(denied.status, 401);
+    assert.equal(inspector.status, 200);
+    assert.deepEqual((await inspector.json()).data, {
+      category: 'calories',
+      date: '2026-07-16',
+      page: { cursor: null, limit: 200 },
+      status: 'available',
+    });
+    assert.equal(source.status, 200);
+    assert.deepEqual((await source.json()).data.page, {
+      cursor: 'opaque',
+      limit: 50,
+    });
+    assert.equal(invalidCategory.status, 400);
+    assert.match((await invalidCategory.json()).message, /category/i);
+    assert.equal(invalidDate.status, 400);
+    assert.match((await invalidDate.json()).message, /date/i);
+    assert.equal(invalidCalendarDate.status, 400);
+    assert.equal(inspector.headers.get('cache-control'), 'no-store');
   });
 });
 
