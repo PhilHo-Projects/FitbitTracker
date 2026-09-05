@@ -27,7 +27,13 @@ function stubRepository(initial) {
     },
     async markAlerted() {},
     async withLock(_provider, fn) {
-      return fn(row, null);
+      const before = row;
+      try {
+        return await fn(row, null);
+      } catch (error) {
+        row = before; // Model the repository's rollback, not just its callback.
+        throw error;
+      }
     },
   };
 }
@@ -175,4 +181,29 @@ test('onDisconnect fires once on the connected to disconnected edge', async () =
   await assert.rejects(connector.accessToken());
   await assert.rejects(connector.accessToken());
   assert.equal(fired.length, 1);
+});
+
+test('disconnection commits before alerting and alert failure cannot undo it', async () => {
+  const repository = stubRepository(STALE);
+  let committed = false;
+  const withLock = repository.withLock.bind(repository);
+  repository.withLock = async (...args) => {
+    const result = await withLock(...args);
+    committed = true;
+    return result;
+  };
+  let alerts = 0;
+  const connector = createGoogleConnector({
+    repository, now: AT,
+    oauth: { async refresh() { throw Object.assign(new Error('invalid_grant'), { fatal: true }); } },
+    onDisconnect: async () => {
+      assert.equal(committed, true, 'alert must run after the transaction commits');
+      alerts += 1;
+      throw new Error('webhook unavailable');
+    },
+  });
+  await assert.rejects(connector.accessToken(), { disconnected: true });
+  assert.equal((await repository.load()).status, 'disconnected');
+  await assert.rejects(connector.accessToken(), { disconnected: true });
+  assert.equal(alerts, 1);
 });

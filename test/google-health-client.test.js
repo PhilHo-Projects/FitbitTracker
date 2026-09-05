@@ -6,6 +6,14 @@ import { buildGoogleHealthRequest } from '../lib/jobs/google-health-request.js';
 
 const connector = { async accessToken() { return 'token-value'; } };
 
+test('transient refresh failures remain retryable through the direct client', async () => {
+  const client = createGoogleHealthClient({
+    connector: { async accessToken() { throw Object.assign(new Error('backend_error'), { fatal: false, transient: true }); } },
+    fetchImpl: async () => assert.fail('no Health request without a token'),
+  });
+  await assert.rejects(client.request({ operation: 'list', metric: 'heart-rate', startDate: '2026-09-01', endDateExclusive: '2026-09-02' }), { transient: true });
+});
+
 test('builds a list url with a civil-time filter', () => {
   const built = buildGoogleHealthRequest({
     operation: 'list',
