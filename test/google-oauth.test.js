@@ -117,3 +117,23 @@ test('refresh tolerates Google omitting a new refresh token', async () => {
   assert.equal(result.accessToken, 'a2');
   assert.equal(result.refreshToken, null);
 });
+
+test('rejects malformed successful token responses without persisting empty tokens', async () => {
+  for (const body of [{}, { access_token: 'a' }, { access_token: 'a', expires_in: -1 }, null]) {
+    await assert.rejects(client(async () => ({ ok: true, status: 200, json: async () => body })).refresh('r'), { fatal: false, transient: true });
+  }
+});
+
+test('provider descriptions cannot leak tokens in OAuth errors', async () => {
+  await assert.rejects(client(async () => ({ ok: false, status: 400, json: async () => ({ error: 'invalid_grant', error_description: 'secret-token' }) })).refresh('r'), (error) => {
+    assert.equal(error.message, 'Google OAuth: invalid_grant');
+    return true;
+  });
+});
+
+test('token requests time out and stay retryable', async () => {
+  const oauth = createGoogleOAuthClient({ clientId: 'id', clientSecret: 'secret', redirectUri: 'http://localhost/callback', timeoutMs: 10,
+    fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })),
+  });
+  await assert.rejects(oauth.refresh('r'), { fatal: false, transient: true });
+});

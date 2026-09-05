@@ -184,6 +184,7 @@ export function createApp(options = {}) {
         connector,
         oauth,
         secret: env.DASHBOARD_SESSION_SECRET || '',
+        secureCookies: env.NODE_ENV === 'production',
         requireAuth,
       }),
     );

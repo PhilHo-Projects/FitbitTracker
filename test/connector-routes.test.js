@@ -8,7 +8,7 @@ import { signState } from '../lib/connectors/google-oauth.js';
 
 const SECRET = 'test-secret-value';
 
-function createServer({ connector, oauth }) {
+function createServer({ connector, oauth, requireAuth = (_req, _res, next) => next() }) {
   const app = express();
   app.use(express.json());
   app.use(
@@ -17,7 +17,7 @@ function createServer({ connector, oauth }) {
       connector,
       oauth,
       secret: SECRET,
-      requireAuth: (_req, _res, next) => next(),
+      requireAuth,
     }),
   );
   return app.listen(0);
@@ -79,6 +79,7 @@ test('the callback stores tokens for a valid state', async () => {
   const response = await call(
     server,
     `/api/connectors/google/callback?code=auth-code&state=${encodeURIComponent(state)}`,
+    { headers: { cookie: `google_health_oauth_state=${state}` } },
   );
   assert.equal(response.status, 302);
   assert.equal(response.headers.get('location'), '/settings?connected=1');
@@ -92,9 +93,57 @@ test('the callback surfaces a denied consent', async () => {
   const response = await call(
     server,
     `/api/connectors/google/callback?error=access_denied&state=${encodeURIComponent(state)}`,
+    { headers: { cookie: `google_health_oauth_state=${state}` } },
   );
   assert.match(response.headers.get('location'), /error=access_denied/);
   server.close();
+});
+
+test('a signed state cannot be used from another browser', async (t) => {
+  const server = createServer({ connector: { connectWithCode: () => assert.fail('must not exchange') }, oauth: {} });
+  t.after(() => server.close());
+  const state = signState(SECRET);
+  for (const cookie of ['', `google_health_oauth_state=${signState(SECRET)}`]) {
+    const response = await call(server, `/api/connectors/google/callback?code=c&state=${state}`, { headers: { cookie } });
+    assert.equal(response.headers.get('location'), '/settings?error=invalid_state');
+  }
+});
+
+test('authorization sets a callback-scoped HttpOnly Lax cookie and callback clears it', async (t) => {
+  let exchanged = null;
+  const server = createServer({
+    connector: { connectWithCode: (code) => { exchanged = code; } },
+    oauth: { authorizationUrl: ({ state }) => `https://accounts.google.com/x?state=${state}` },
+  });
+  t.after(() => server.close());
+  const start = await call(server, '/api/connectors/google/authorize', { method: 'POST' });
+  const cookie = start.headers.get('set-cookie');
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /SameSite=Lax/);
+  assert.match(cookie, /Path=\/api\/connectors\/google\/callback/);
+  const state = new URL((await start.json()).data.url).searchParams.get('state');
+  const response = await call(server, `/api/connectors/google/callback?code=c&state=${state}`, { headers: { cookie: cookie.split(';')[0] } });
+  assert.equal(exchanged, 'c');
+  assert.equal(response.headers.get('location'), '/settings?connected=1');
+  assert.match(response.headers.get('set-cookie'), /Expires=Thu, 01 Jan 1970/);
+});
+
+test('callback failures never reflect upstream secrets into the redirect', async (t) => {
+  const server = createServer({ connector: { connectWithCode: () => { throw new Error('secret-token'); } }, oauth: {} });
+  t.after(() => server.close());
+  const state = signState(SECRET);
+  for (const query of ['code=c', 'error=secret-token']) {
+    const response = await call(server, `/api/connectors/google/callback?${query}&state=${state}`, { headers: { cookie: `google_health_oauth_state=${state}` } });
+    assert.equal(response.headers.get('location'), '/settings?error=connection_failed');
+  }
+});
+
+test('all connector endpoints require owner authentication', async (t) => {
+  const server = createServer({ connector: {}, oauth: {}, requireAuth: (_req, res) => res.sendStatus(401) });
+  t.after(() => server.close());
+  for (const [path, method] of [['', 'GET'], ['/authorize', 'POST'], ['/callback', 'GET'], ['/disconnect', 'POST']]) {
+    assert.equal((await call(server, `/api/connectors/google${path}`, { method })).status, 401);
+  }
 });
 
 test('disconnect delegates to the connector', async () => {
