@@ -9,6 +9,7 @@ import { createArchiveObjectStore, createS3ClientFromConfig } from './lib/archiv
 import { createHealthArchiveService } from './lib/archive/service.js';
 import { createHealthArchiveWorker } from './lib/archive/worker.js';
 import { createAuth } from './lib/auth.js';
+import { buildOwnedConnector } from './lib/connectors/runtime.js';
 import { createHealthRepository } from './lib/db/health-repository.js';
 import { createMetricWriter } from './lib/db/metric-writer.js';
 import { createPool, databaseReady } from './lib/db/pool.js';
@@ -265,6 +266,7 @@ const isDirectRun =
 if (isDirectRun) {
   const port = process.env.PORT || 3000;
   const pool = createPool();
+  const { connector, oauth } = buildOwnedConnector({ pool });
   const journalRepository =
     pool && process.env.JOURNAL_ENCRYPTION_KEYS
       ? createJournalRepository(pool, createJournalCipher(process.env.JOURNAL_ENCRYPTION_KEYS))
@@ -335,7 +337,7 @@ if (isDirectRun) {
     archiveObjectClient?.destroy();
     archiveObjectClient = null;
   }
-  const app = createApp({ pool, syncService, journalRepository, exportService });
+  const app = createApp({ pool, syncService, journalRepository, exportService, connector, oauth });
   const server = app.listen(port, () => {
     console.log(`Personal Health Data Hub listening on http://localhost:${port}`);
   });
