@@ -8,7 +8,7 @@ import { signState } from '../lib/connectors/google-oauth.js';
 
 const SECRET = 'test-secret-value';
 
-function createServer({ connector, oauth, requireAuth = (_req, _res, next) => next() }) {
+function createServer({ connector, oauth, healthStatus, requireAuth = (_req, _res, next) => next() }) {
   const app = express();
   app.use(express.json());
   app.use(
@@ -16,6 +16,7 @@ function createServer({ connector, oauth, requireAuth = (_req, _res, next) => ne
     createConnectorRouter({
       connector,
       oauth,
+      healthStatus,
       secret: SECRET,
       requireAuth,
     }),
@@ -43,6 +44,17 @@ test('status never leaks a token', async () => {
   assert.equal(body.data.connected, true);
   assert.ok(!JSON.stringify(body).toLowerCase().includes('token'));
   server.close();
+});
+
+test('status includes stored-data health even before OAuth is configured', async (t) => {
+  const server = createServer({ healthStatus: async () => ({ newestMeasurementAt: '2026-07-24T18:00:00Z', lastSuccessfulSync: '2026-07-24T19:00:00Z' }) });
+  t.after(() => server.close());
+  const response = await call(server, '/api/connectors/google');
+  const { data } = await response.json();
+  assert.equal(data.configured, false);
+  assert.equal(data.lastSuccessfulSync, '2026-07-24T19:00:00Z');
+  assert.equal(data.newestMeasurementAt, '2026-07-24T18:00:00Z');
+  assert.equal((await call(server, '/api/connectors/google/authorize', { method: 'POST' })).status, 503);
 });
 
 test('authorize returns a signed-state url', async () => {

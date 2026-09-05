@@ -746,6 +746,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
   .login-intro h1 { font-size: 2.65rem; }
 }
 
+#connectorScopes { white-space: pre-line; overflow-wrap: anywhere; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

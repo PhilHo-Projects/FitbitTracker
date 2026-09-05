@@ -177,7 +177,6 @@ export function createApp(options = {}) {
       res.status(503).json({ ok: false, message: 'Synchronization worker is not configured' });
     });
   }
-  if (connector && oauth) {
     app.use(
       '/api/connectors',
       createConnectorRouter({
@@ -185,10 +184,11 @@ export function createApp(options = {}) {
         oauth,
         secret: env.DASHBOARD_SESSION_SECRET || '',
         secureCookies: env.NODE_ENV === 'production',
+        mode: env.GOOGLE_CONNECTOR_MODE === 'direct' && connector ? 'direct' : 'n8n',
+        healthStatus: healthRepository?.getConnectionHealth,
         requireAuth,
       }),
     );
-  }
   if (exportService) {
     app.use('/api/exports', createExportRouter({ service: exportService, requireAuth }));
   } else {
