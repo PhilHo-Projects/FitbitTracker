@@ -62,6 +62,33 @@ test('total-calories rollup posts a range body', () => {
   assert.ok(built.body.range.startTime);
 });
 
+test('rollup boundaries are local midnight across DST changes and UTC', () => {
+  for (const [timezone, startDate, endDateExclusive, startTime, endTime] of [
+    ['UTC', '2026-09-01', '2026-09-02', '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z'],
+    ['America/Toronto', '2026-03-08', '2026-03-09', '2026-03-08T05:00:00.000Z', '2026-03-09T04:00:00.000Z'],
+    ['America/Toronto', '2026-11-01', '2026-11-02', '2026-11-01T04:00:00.000Z', '2026-11-02T05:00:00.000Z'],
+    ['Asia/Jerusalem', '2026-03-27', '2026-03-28', '2026-03-26T22:00:00.000Z', '2026-03-27T21:00:00.000Z'],
+  ]) {
+    const request = buildGoogleHealthRequest({ operation: 'rollUp', metric: 'total-calories', timezone, startDate, endDateExclusive });
+    assert.deepEqual(request.body.range, { startTime, endTime }, timezone);
+  }
+});
+
+test('malformed Health responses are retryable failures, never empty successful pages', async () => {
+  for (const json of [async () => { throw new SyntaxError('bad JSON'); }, async () => null, async () => []]) {
+    const client = createGoogleHealthClient({ connector, fetchImpl: async () => ({ ok: true, status: 200, json }) });
+    await assert.rejects(client.request({ operation: 'profile', metric: 'sleep' }), { transient: true });
+  }
+});
+
+test('Health response errors do not expose upstream text', async () => {
+  const client = createGoogleHealthClient({ connector, fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ error: { message: 'secret-token' } }) }) });
+  await assert.rejects(client.request({ operation: 'profile', metric: 'sleep' }), (error) => {
+    assert.equal(error.message, 'Google Health returned HTTP 503');
+    return true;
+  });
+});
+
 test('rejects an unsupported operation and metric pair', () => {
   assert.throws(
     () => buildGoogleHealthRequest({ operation: 'rollUp', metric: 'sleep' }),
