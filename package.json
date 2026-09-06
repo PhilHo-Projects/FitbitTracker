@@ -13,6 +13,7 @@
     "dev:app": "node --watch server.js",
     "preview": "npm run build && node scripts/preview-fixtures.mjs",
     "migrate": "node scripts/migrate.mjs",
+    "sync:backfill": "node scripts/sync-backfill.mjs",
     "health:compact": "node scripts/compact-health.mjs",
     "health:archive": "node scripts/health-archive.mjs",
     "auth:create-owner": "node scripts/create-owner.mjs",

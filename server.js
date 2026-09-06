@@ -9,7 +9,6 @@ import { createArchiveObjectStore, createS3ClientFromConfig } from './lib/archiv
 import { createHealthArchiveService } from './lib/archive/service.js';
 import { createHealthArchiveWorker } from './lib/archive/worker.js';
 import { createAuth } from './lib/auth.js';
-import { buildOwnedConnector } from './lib/connectors/runtime.js';
 import { createHealthRepository } from './lib/db/health-repository.js';
 import { createMetricWriter } from './lib/db/metric-writer.js';
 import { createPool, databaseReady } from './lib/db/pool.js';
@@ -18,7 +17,8 @@ import { createExportService } from './lib/exports/service.js';
 import { securityHeaders, validateMutationOrigin } from './lib/http/security.js';
 import { createJournalCipher } from './lib/journal/crypto.js';
 import { createJournalRepository } from './lib/journal/repository.js';
-import { createGoogleHealthGateway } from './lib/jobs/google-health-gateway.js';
+import { buildGoogleHealthRuntime } from './scripts/connector-support.mjs';
+export { selectGoogleHealthGateway } from './scripts/connector-support.mjs';
 import { createSyncRepository } from './lib/jobs/sync-repository.js';
 import { createSyncService } from './lib/jobs/sync-service.js';
 import { createConnectorRouter } from './lib/routes/connector-routes.js';
@@ -266,20 +266,17 @@ const isDirectRun =
 if (isDirectRun) {
   const port = process.env.PORT || 3000;
   const pool = createPool();
-  const { connector, oauth } = buildOwnedConnector({ pool });
+  const { connector, oauth, gateway } = buildGoogleHealthRuntime(pool);
   const journalRepository =
     pool && process.env.JOURNAL_ENCRYPTION_KEYS
       ? createJournalRepository(pool, createJournalCipher(process.env.JOURNAL_ENCRYPTION_KEYS))
       : null;
   const syncService =
-    pool && process.env.N8N_WEBHOOK_URL && process.env.N8N_WEBHOOK_TOKEN
+    pool && gateway
       ? createSyncService({
           pool,
           repository: createSyncRepository(pool),
-          gateway: createGoogleHealthGateway({
-            url: process.env.N8N_WEBHOOK_URL,
-            token: process.env.N8N_WEBHOOK_TOKEN,
-          }),
+          gateway,
           writer: createMetricWriter(pool, {
             compactWritesEnabled: process.env.HEALTH_COMPACT_WRITES_ENABLED === 'true',
           }),

@@ -18,6 +18,9 @@ import { createHealthRepository } from '../lib/db/health-repository.js';
 import { createAnalysisDatasetService } from '../lib/exports/dataset.js';
 import { createSyncRepository } from '../lib/jobs/sync-repository.js';
 import { createSyncService } from '../lib/jobs/sync-service.js';
+import { createKeyringCipher } from '../lib/crypto/keyring.js';
+import { createConnectorRepository } from '../lib/connectors/repository.js';
+import { createGoogleConnector } from '../lib/connectors/google-connector.js';
 
 const integrationUrl = process.env.PG_INTEGRATION_URL;
 const integrationSchemaPrefix = 'health_archive_integration_';
@@ -46,6 +49,60 @@ test('PostgreSQL integration harness uses only a generated isolated schema', () 
   assert.throws(() => quoteIntegrationSchema('public'), /must be generated/);
   assert.equal(integrationSchemaToDrop(schema, false), null);
   assert.equal(integrationSchemaToDrop(schema, true), `"${schema}"`);
+});
+
+test('PostgreSQL connector row locks serialize separate instances and commit invalid_grant', { skip: !integrationUrl }, async () => {
+  const pool = new pg.Pool({ connectionString: integrationUrl });
+  const schema = createIntegrationSchemaName();
+  const quotedSchema = quoteIntegrationSchema(schema);
+  let created = false;
+  const scoped = {
+    async connect() {
+      const client = await pool.connect();
+      try {
+        await client.query(`SET search_path TO ${quotedSchema}`);
+        return client;
+      } catch (error) { client.release(); throw error; }
+    },
+    async query(...args) {
+      const client = await this.connect();
+      try { return await client.query(...args); } finally { client.release(); }
+    },
+  };
+  try {
+    await pool.query(`CREATE SCHEMA ${quotedSchema}`);
+    created = true;
+    await applyMigrations(pool, { schema });
+    const cipher = createKeyringCipher({ serializedKeyring: `1:${Buffer.alloc(32, 7).toString('base64')}`, label: 'connector', subject: 'Connector', variableName: 'CONNECTOR_ENCRYPTION_KEYS' });
+    const repository = createConnectorRepository(scoped, cipher);
+    let at = Date.parse('2026-09-05T12:00:00Z');
+    await repository.save('google-health', { accessToken: 'expired', refreshToken: 'r1', accessTokenExpiresAt: new Date(at - 1000) });
+    let refreshes = 0;
+    let fatal = false;
+    let alerts = 0;
+    const oauth = { async refresh() {
+      refreshes += 1;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      if (fatal) throw Object.assign(new Error('invalid_grant'), { fatal: true });
+      return { accessToken: 'fresh', refreshToken: 'r2', expiresInSeconds: 3600 };
+    } };
+    const connectors = Array.from({ length: 2 }, () => createGoogleConnector({ repository: createConnectorRepository(scoped, cipher), oauth, now: () => at, onDisconnect: () => { alerts += 1; } }));
+    const tokens = await Promise.all(Array.from({ length: 8 }, (_, index) => connectors[index % 2].accessToken()));
+    assert.deepEqual(new Set(tokens), new Set(['fresh']));
+    assert.equal(refreshes, 1, 'separate instances must share one database-locked refresh');
+    at += 3_600_000;
+    fatal = true;
+    const results = await Promise.allSettled(Array.from({ length: 8 }, (_, index) => connectors[index % 2].accessToken()));
+    assert.ok(results.every(({ status, reason }) => status === 'rejected' && reason.disconnected));
+    assert.equal(refreshes, 2, 'only one fatal refresh across both instances');
+    assert.equal(alerts, 1);
+    assert.equal((await repository.load('google-health')).status, 'disconnected', 'disconnection must survive transaction completion');
+  } finally {
+    try {
+      const target = integrationSchemaToDrop(schema, created);
+      if (target) await pool.query(`DROP SCHEMA ${target} CASCADE`);
+    } finally { await pool.end(); }
+  }
 });
 
 test('PostgreSQL health availability and raw export cursors preserve canonical dates and microseconds', { skip: !integrationUrl }, async () => {
