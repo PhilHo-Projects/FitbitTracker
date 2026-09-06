@@ -747,6 +747,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 }
 
 #connectorScopes { white-space: pre-line; overflow-wrap: anywhere; }
+#connectorDetail { overflow-wrap: anywhere; }
+#view-settings .summary-facts > div:last-child { grid-column: 1 / -1; }
+#view-settings .summary-facts dt { color: var(--faint); font-size: 0.75rem; }
+#view-settings .summary-facts dd { margin-top: 6px; font-size: 0.9rem; }
+#connectorState { font-size: 0.9rem; font-weight: 600; }
+#connectorState[data-state="connected"] { color: var(--accent); }
+#connectorState[data-state="disconnected"] { color: var(--awake); }
+@media (max-width: 600px) {
+  #view-settings .summary-facts { grid-template-columns: 1fr; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
