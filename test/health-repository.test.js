@@ -59,6 +59,7 @@ test('dashboard query distinguishes present metrics from missing coverage', asyn
 
   assert.equal(dashboard.date, '2026-07-16');
   assert.equal(dashboard.timezone, 'America/Toronto');
+  assert.equal(dashboard.newestMeasurementAt, '2026-07-16T23:30:00.000Z');
   assert.equal(dashboard.sleep.durationMinutes, 397);
   assert.equal(dashboard.sleep.stageSummary.light.minutes, 221);
   assert.equal(dashboard.sleep.stages.length, 12);
@@ -85,6 +86,11 @@ test('dashboard query distinguishes present metrics from missing coverage', asyn
   assert.equal(missing.sleep, null);
   assert.equal(missing.heart.missing, true);
   assert.equal(missing.calories.missing, true);
+  assert.equal(missing.newestMeasurementAt, '2026-07-16T23:30:00.000Z');
+  assert.deepEqual(await repository.getConnectionHealth(), {
+    newestMeasurementAt: dashboard.newestMeasurementAt,
+    lastSuccessfulSync: dashboard.sync.lastSuccessfulSync,
+  });
 
   await pool.end();
 });

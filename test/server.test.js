@@ -72,7 +72,7 @@ test('sets a secure session cookie after a valid login', async () => {
     assert.equal(response.status, 200);
     assert.match(cookie, /^fitbit_session=/);
     assert.match(cookie, /HttpOnly/i);
-    assert.match(cookie, /SameSite=Strict/i);
+    assert.match(cookie, /SameSite=Lax/i);
   });
 });
 

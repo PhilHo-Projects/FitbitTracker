@@ -17,9 +17,11 @@ import { createExportService } from './lib/exports/service.js';
 import { securityHeaders, validateMutationOrigin } from './lib/http/security.js';
 import { createJournalCipher } from './lib/journal/crypto.js';
 import { createJournalRepository } from './lib/journal/repository.js';
-import { createGoogleHealthGateway } from './lib/jobs/google-health-gateway.js';
+import { buildGoogleHealthRuntime } from './scripts/connector-support.mjs';
+export { selectGoogleHealthGateway } from './scripts/connector-support.mjs';
 import { createSyncRepository } from './lib/jobs/sync-repository.js';
 import { createSyncService } from './lib/jobs/sync-service.js';
+import { createConnectorRouter } from './lib/routes/connector-routes.js';
 import { createExportRouter } from './lib/routes/export-routes.js';
 import { createHealthRouter } from './lib/routes/health-routes.js';
 import { createJournalRouter } from './lib/routes/journal-routes.js';
@@ -54,6 +56,8 @@ export function createApp(options = {}) {
     readinessCheck,
     syncService = null,
     exportService = null,
+    connector = null,
+    oauth = null,
   } = options;
   const pool = options.pool === undefined ? createPool(env) : options.pool;
   const auth = options.auth === undefined ? createAuth({ pool, env }) : options.auth;
@@ -134,7 +138,7 @@ export function createApp(options = {}) {
     }
   });
 
-  app.get(['/', '/index.html'], requireAuth, (_req, res) => {
+  app.get(['/', '/index.html', '/settings'], requireAuth, (_req, res) => {
     res.sendFile(path.join(publicDir, 'index.html'));
   });
   app.use(express.static(publicDir, { index: false, maxAge: 0 }));
@@ -174,6 +178,18 @@ export function createApp(options = {}) {
       res.status(503).json({ ok: false, message: 'Synchronization worker is not configured' });
     });
   }
+    app.use(
+      '/api/connectors',
+      createConnectorRouter({
+        connector,
+        oauth,
+        secret: env.DASHBOARD_SESSION_SECRET || '',
+        secureCookies: env.NODE_ENV === 'production',
+        mode: env.GOOGLE_CONNECTOR_MODE === 'direct' && connector ? 'direct' : 'n8n',
+        healthStatus: healthRepository?.getConnectionHealth,
+        requireAuth,
+      }),
+    );
   if (exportService) {
     app.use('/api/exports', createExportRouter({ service: exportService, requireAuth }));
   } else {
@@ -250,19 +266,17 @@ const isDirectRun =
 if (isDirectRun) {
   const port = process.env.PORT || 3000;
   const pool = createPool();
+  const { connector, oauth, gateway } = buildGoogleHealthRuntime(pool);
   const journalRepository =
     pool && process.env.JOURNAL_ENCRYPTION_KEYS
       ? createJournalRepository(pool, createJournalCipher(process.env.JOURNAL_ENCRYPTION_KEYS))
       : null;
   const syncService =
-    pool && process.env.N8N_WEBHOOK_URL && process.env.N8N_WEBHOOK_TOKEN
+    pool && gateway
       ? createSyncService({
           pool,
           repository: createSyncRepository(pool),
-          gateway: createGoogleHealthGateway({
-            url: process.env.N8N_WEBHOOK_URL,
-            token: process.env.N8N_WEBHOOK_TOKEN,
-          }),
+          gateway,
           writer: createMetricWriter(pool, {
             compactWritesEnabled: process.env.HEALTH_COMPACT_WRITES_ENABLED === 'true',
           }),
@@ -320,7 +334,7 @@ if (isDirectRun) {
     archiveObjectClient?.destroy();
     archiveObjectClient = null;
   }
-  const app = createApp({ pool, syncService, journalRepository, exportService });
+  const app = createApp({ pool, syncService, journalRepository, exportService, connector, oauth });
   const server = app.listen(port, () => {
     console.log(`Personal Health Data Hub listening on http://localhost:${port}`);
   });

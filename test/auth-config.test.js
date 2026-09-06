@@ -48,3 +48,9 @@ test('sign-up is disabled unless the seeding script asks for it', () => {
     false,
   );
 });
+
+test('session cookies allow the top-level Google OAuth callback redirect', () => {
+  const auth = createAuth({ pool: pool(), env: { DASHBOARD_SESSION_SECRET: secret } });
+
+  assert.equal(auth.options.advanced.defaultCookieAttributes.sameSite, 'lax');
+});

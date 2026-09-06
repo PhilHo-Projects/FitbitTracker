@@ -11,6 +11,7 @@ import {
   sleepStageBreakdown,
   sleepTrendRange,
 } from './health-ui.js';
+import { connectorBannerMessage, renderConnectorStatus, connectorCallbackMessage, syncJobOutcome } from './settings-ui.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -26,8 +27,10 @@ const state = {
   ranges: { heart: 'day', calories: 'day' },
   sleepTrendPeriod: '7-days',
   dashboard: null,
+  newestMeasurementAt: null,
   journal: [],
   exportPoll: null,
+  syncPoll: null,
 };
 
 function escapeHtml(value) {
@@ -85,6 +88,21 @@ async function fetchJson(url, options = {}) {
     throw new Error(payload.message || `Request failed with HTTP ${response.status}`);
   }
   return payload.data ?? payload;
+}
+
+async function refreshConnector() {
+  let data = null;
+  try {
+    data = await fetchJson('/api/connectors/google');
+    state.newestMeasurementAt = data.newestMeasurementAt ?? null;
+  } catch {
+    // Never leave a previous healthy status visible after a failed health check.
+  }
+  renderConnectorStatus(document, data);
+  const banner = document.getElementById('connectorBanner');
+  const message = connectorBannerMessage(data, { newestMeasurementAt: state.newestMeasurementAt });
+  banner.textContent = message ?? '';
+  banner.hidden = !message;
 }
 
 function showNotice(message = '', kind = 'error') {
@@ -155,6 +173,7 @@ function renderStageSummary(sleep) {
 
 function renderToday(data, journal) {
   state.dashboard = data;
+  state.newestMeasurementAt = data.newestMeasurementAt ?? null;
   state.journal = journal;
   const sleep = data.sleep;
   $('#todaySleepEmpty').hidden = Boolean(sleep);
@@ -211,6 +230,7 @@ async function loadToday() {
       fetchJson(`/api/journal?start=${state.selectedDate}&end=${end}`).catch(() => []),
     ]);
     renderToday(dashboard, journal);
+    await refreshConnector();
   } catch (error) {
     $('#todayLoading').hidden = true;
     showNotice(error.message);
@@ -605,14 +625,38 @@ async function syncNow() {
   button.disabled = true;
   setSyncState('loading', 'Sync queued');
   try {
-    await fetchJson('/api/sync', { method: 'POST', body: JSON.stringify({ mode: 'recent' }) });
+    const job = await fetchJson('/api/sync', { method: 'POST', body: JSON.stringify({ mode: 'recent' }) });
     toast('Recent sync queued.');
-    setTimeout(loadToday, 1200);
+    clearTimeout(state.syncPoll);
+    monitorSync(job.id);
   } catch (error) {
     toast(error.message);
     setSyncState('stale', 'Sync unavailable');
   } finally {
     button.disabled = false;
+  }
+}
+
+async function monitorSync(id, attempts = 0) {
+  try {
+    const result = syncJobOutcome(await fetchJson('/api/sync/status'), id);
+    if (result !== 'pending') {
+      if (state.activeView === 'today') await loadToday();
+      else await refreshConnector();
+      if (result === 'failed') {
+        setSyncState('stale', 'Sync needs attention');
+        toast('Sync finished with errors. Check Settings for the connection state.');
+      } else toast('Sync complete.');
+      return;
+    }
+    if (attempts >= 120) {
+      toast('Sync is still running in the background.');
+      return;
+    }
+    state.syncPoll = setTimeout(() => monitorSync(id, attempts + 1), 5000);
+  } catch {
+    setSyncState('stale', 'Sync status unavailable');
+    await refreshConnector();
   }
 }
 
@@ -626,7 +670,7 @@ async function setView(view) {
     element.hidden = element.dataset.view !== view;
   });
   $$('.nav-item').forEach((item) => item.classList.toggle('is-active', item.dataset.nav === view));
-  window.history.replaceState({}, '', view === 'today' ? '/' : `/#${view}`);
+  window.history.replaceState({}, '', view === 'today' ? '/' : view === 'settings' ? '/settings' : `/#${view}`);
   window.scrollTo({ top: 0, behavior: 'instant' });
   if (view === 'today') await loadToday();
   if (view === 'sleep') await loadSleepWorkspace();
@@ -634,6 +678,7 @@ async function setView(view) {
   if (view === 'calories') await loadCalorieWorkspace();
   if (view === 'journal') await loadJournal();
   if (view === 'export') await loadExports();
+  if (view !== 'today') await refreshConnector();
 }
 
 function addSuggestedTag(tag) {
@@ -699,6 +744,22 @@ $('#datePicker').addEventListener('change', (event) => {
 });
 $('#addContextButton').addEventListener('click', () => setView('journal'));
 $('#syncButton').addEventListener('click', syncNow);
+$('#connectorConnect')?.addEventListener('click', async () => {
+  try {
+    const data = await fetchJson('/api/connectors/google/authorize', { method: 'POST' });
+    window.location.assign(data.url);
+  } catch (error) {
+    toast(error.message);
+  }
+});
+$('#connectorDisconnect')?.addEventListener('click', async () => {
+  try {
+    await fetchJson('/api/connectors/google/disconnect', { method: 'POST' });
+    await refreshConnector();
+  } catch (error) {
+    toast(error.message);
+  }
+});
 $('#logoutButton').addEventListener('click', async () => {
   await fetch('/api/auth/sign-out', { method: 'POST' });
   window.location.assign('/login');
@@ -718,5 +779,15 @@ $('#journalList').addEventListener('click', (event) => {
 $('#exportForm').addEventListener('submit', createExport);
 
 updateDateControls();
-const initialView = window.location.hash.slice(1);
-setView(['sleep', 'heart', 'calories', 'journal', 'export'].includes(initialView) ? initialView : 'today');
+const callbackMessage = window.location.pathname === '/settings' ? connectorCallbackMessage(window.location.search) : null;
+if (callbackMessage) toast(callbackMessage);
+const initialView = window.location.pathname === '/settings'
+  ? 'settings'
+  : window.location.hash.slice(1);
+setView(
+  ['sleep', 'heart', 'calories', 'journal', 'export', 'settings'].includes(initialView)
+    ? initialView
+    : 'today',
+);
+// Background syncs and token expiry must become visible without a page reload.
+setInterval(() => { if (!document.hidden) refreshConnector(); }, 60_000);

@@ -8,18 +8,62 @@ import { createPool } from '../lib/db/pool.js';
 // an account already exists, and never blocks on a prompt.
 const ifMissing = process.argv.includes('--if-missing');
 
-function ask(question, { hidden = false } = {}) {
-  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  const write = rl.output.write.bind(rl.output);
-  let muted = false;
-  rl.output.write = (chunk, ...rest) => (muted ? true : write(chunk, ...rest));
+const END_OF_TRANSMISSION = 4;
+const INTERRUPT = 3;
+const BACKSPACE = 8;
+const DELETE = 127;
+const FIRST_PRINTABLE = 32;
 
-  const answer = rl.question(question);
-  muted = hidden;
-  return answer.finally(() => {
-    muted = false;
-    if (hidden) write('\n');
-    rl.close();
+function ask(question) {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: process.stdin.isTTY,
+  });
+  return rl.question(question).finally(() => rl.close());
+}
+
+// Echoes an asterisk per keystroke rather than suppressing output entirely, so
+// the prompt visibly responds while the password stays off the screen.
+function askHidden(question) {
+  const { stdin, stdout } = process;
+  if (!stdin.isTTY) return ask(question);
+
+  return new Promise((resolve, reject) => {
+    stdout.write(question);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    let value = '';
+    const settle = (finish, result) => {
+      stdin.removeListener('data', onData);
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdout.write('\n');
+      finish(result);
+    };
+    const onData = (chunk) => {
+      for (const character of chunk) {
+        const code = character.charCodeAt(0);
+        if (character === '\r' || character === '\n' || code === END_OF_TRANSMISSION) {
+          return settle(resolve, value);
+        }
+        if (code === INTERRUPT) return settle(reject, new Error('Cancelled'));
+        if (code === DELETE || code === BACKSPACE) {
+          if (value) {
+            value = value.slice(0, -1);
+            stdout.write('\b \b');
+          }
+        } else if (code >= FIRST_PRINTABLE) {
+          value += character;
+          stdout.write('*');
+        }
+      }
+      return undefined;
+    };
+
+    stdin.on('data', onData);
   });
 }
 
@@ -43,10 +87,17 @@ try {
     );
   } else {
     const email = (process.env.DASHBOARD_OWNER_EMAIL || (await ask('Owner email: '))).trim();
-    const password = process.env.DASHBOARD_OWNER_PASSWORD || (await ask('Owner password: ', { hidden: true }));
+    const password = process.env.DASHBOARD_OWNER_PASSWORD || (await askHidden('Owner password: '));
+
     if (!email) throw new Error('An owner email is required');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error(`"${email}" is not a full email address, e.g. you@example.com`);
+    }
+    if (!password) throw new Error('No password was entered');
     if (password.length < authConstants.MIN_PASSWORD_LENGTH) {
-      throw new Error(`The owner password must be at least ${authConstants.MIN_PASSWORD_LENGTH} characters`);
+      throw new Error(
+        `The owner password is ${password.length} characters; it must be at least ${authConstants.MIN_PASSWORD_LENGTH}`,
+      );
     }
 
     // Sign-up stays disabled on the running server; this script is the only
