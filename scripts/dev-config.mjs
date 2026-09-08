@@ -12,11 +12,11 @@ function validateLiveGateway(env) {
   try {
     webhookUrl = new URL(env.N8N_WEBHOOK_URL);
   } catch {
-    throw new Error('Create .env.local with the health-hub-sync gateway URL and token');
+    throw new Error('Create .env.local with the health-hub-sync gateway URL and token. For synthetic data without credentials or Docker, run npm run preview.');
   }
 
   if (webhookUrl.href !== LIVE_WEBHOOK_URL || isPlaceholder(env.N8N_WEBHOOK_TOKEN)) {
-    throw new Error('Create .env.local with the health-hub-sync gateway URL and a non-placeholder token');
+    throw new Error('Create .env.local with the health-hub-sync gateway URL and a non-placeholder N8N_WEBHOOK_TOKEN. For synthetic data without credentials or Docker, run npm run preview.');
   }
 }
 

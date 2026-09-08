@@ -12,15 +12,20 @@ import { createJournalCipher } from '../lib/journal/crypto.js';
 import { createJournalRepository } from '../lib/journal/repository.js';
 import { createApp } from '../server.js';
 import { createAuth } from '../lib/auth.js';
+import { civilDateInTimeZone } from '../public/health-ui.js';
 
 const port = Number(process.env.PORT || 4173);
-const anchorDate = process.env.FIXTURE_DATE || '2026-07-16';
+const anchorDate = process.env.FIXTURE_DATE || civilDateInTimeZone(new Date(), 'America/Toronto');
+const startupAt = Date.now();
+console.log('Preview: preparing the in-memory database (no Docker or gateway required)...');
 const memory = newDb({ noAstCoverageCheck: true });
 const adapter = memory.adapters.createPg();
 const pool = new adapter.Pool();
 
 await applyMigrations(pool);
+console.log('Preview: seeding synthetic sleep, heart, calorie, and SpO2 records. Wait for the ready URL before opening the browser...');
 await seedFixtures(pool, { anchorDate });
+console.log(`Preview: fixtures seeded in ${((Date.now() - startupAt) / 1000).toFixed(1)}s; creating the preview login...`);
 
 const keyring = `1:${crypto.createHash('sha256').update('fixture-preview-journal').digest('base64')}`;
 const journalRepository = createJournalRepository(pool, createJournalCipher(keyring));
@@ -67,7 +72,8 @@ const app = createApp({
   now: () => Date.parse(`${anchorDate}T18:00:00.000Z`),
 });
 const server = app.listen(port, '127.0.0.1', () => {
-  console.log(`Fixture preview: http://127.0.0.1:${port} (preview@example.test / fixture-password-0000; synthetic data only)`);
+  console.log(`Preview ready in ${((Date.now() - startupAt) / 1000).toFixed(1)}s: http://127.0.0.1:${port}`);
+  console.log('Sign in: preview@example.test / fixture-password-0000 (synthetic data only). Keep this terminal running; Ctrl+C stops the preview.');
 });
 exportService.start();
 

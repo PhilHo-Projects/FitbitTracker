@@ -85,7 +85,15 @@ For a lightweight UI preview backed by in-memory deterministic fixtures:
 npm run preview
 ```
 
-This starts `http://127.0.0.1:4173` with the same local owner account.
+This requires neither Docker nor gateway credentials. It seeds an in-memory database before
+starting the server; wait for **Preview ready** and its URL before opening
+`http://127.0.0.1:4173`. Sign in with `preview@example.test` / `fixture-password-0000`.
+Keep the terminal running. Preview records are synthetic and reset when the process restarts.
+They end on today's Toronto date by default; set `FIXTURE_DATE=YYYY-MM-DD` for a fixed preview date.
+
+If `npm run dev` rejects a placeholder `N8N_WEBHOOK_TOKEN`, live-data configuration is incomplete;
+use `npm run preview` to inspect the UI. Live mode also needs Docker Desktop running and the owner
+credentials described above. The Browserslist database warning does not prevent startup.
 
 ## Product workspaces
 
