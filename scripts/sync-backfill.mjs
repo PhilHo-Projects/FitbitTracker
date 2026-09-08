@@ -5,6 +5,7 @@ import { createSyncRepository } from '../lib/jobs/sync-repository.js';
 import { createSyncService } from '../lib/jobs/sync-service.js';
 import { createMetricWriter } from '../lib/db/metric-writer.js';
 import { buildGatewayFromEnv } from './connector-support.mjs';
+import { GOOGLE_HEALTH_METRICS } from '../lib/jobs/planner.js';
 
 function validDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false;
@@ -13,9 +14,11 @@ function validDate(value) {
 }
 
 export async function runBackfill({ args = process.argv.slice(2), env = process.env, poolFactory = createPool, gatewayFactory = buildGatewayFromEnv, now = () => Date.now() } = {}) {
-  const [startDate, endDateExclusive] = args;
-  if (args.length !== 2 || !validDate(startDate) || !validDate(endDateExclusive) || startDate >= endDateExclusive) {
-    throw new Error('Usage: npm run sync:backfill -- <start-date> <end-date-exclusive> (valid, increasing dates required)');
+  const [startDate, endDateExclusive, selection] = args;
+  const metrics = selection?.startsWith('--metrics=') ? [...new Set(selection.slice(10).split(','))] : undefined;
+  if (args.length < 2 || args.length > 3 || !validDate(startDate) || !validDate(endDateExclusive) || startDate >= endDateExclusive
+    || (selection !== undefined && (!metrics || metrics.some((metric) => !GOOGLE_HEALTH_METRICS.includes(metric))))) {
+    throw new Error('Usage: npm run sync:backfill -- <start-date> <end-date-exclusive> [--metrics=oxygen-saturation,daily-oxygen-saturation] (valid dates and metrics required)');
   }
   const pool = poolFactory(env);
   if (!pool) throw new Error('DATABASE_URL is required');
@@ -27,7 +30,7 @@ export async function runBackfill({ args = process.argv.slice(2), env = process.
       writer: createMetricWriter(pool, { compactWritesEnabled: env.HEALTH_COMPACT_WRITES_ENABLED === 'true' }),
       rawRetentionDays: Number(env.RAW_RETENTION_DAYS) || null, now,
     });
-    return await service.enqueue({ mode: 'backfill', startDate, endDateExclusive, requestedBy: 'operator-backfill' });
+    return await service.enqueue({ mode: 'backfill', startDate, endDateExclusive, metrics, requestedBy: 'operator-backfill' });
   } finally {
     await pool.end();
   }

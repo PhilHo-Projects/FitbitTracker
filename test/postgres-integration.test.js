@@ -21,9 +21,71 @@ import { createSyncService } from '../lib/jobs/sync-service.js';
 import { createKeyringCipher } from '../lib/crypto/keyring.js';
 import { createConnectorRepository } from '../lib/connectors/repository.js';
 import { createGoogleConnector } from '../lib/connectors/google-connector.js';
+import { oxygenPoint, oxygenDailyPoint } from '../test-support/oxygen.js';
+import { normalizeOxygenSaturationSamples, normalizeDailyOxygenSaturation } from '../lib/metrics/oxygen-normalizer.js';
+import { createOxygenRepository } from '../lib/db/oxygen-repository.js';
 
 const integrationUrl = process.env.PG_INTEGRATION_URL;
 const integrationSchemaPrefix = 'health_archive_integration_';
+
+test('PostgreSQL oxygen pages rollback atomically and preserve decimals and original timestamps', { skip: !integrationUrl }, async () => {
+  const pool = new pg.Pool({ connectionString: integrationUrl });
+  const schema = createIntegrationSchemaName();
+  const quoted = quoteIntegrationSchema(schema);
+  let created = false;
+  const scoped = {
+    async connect() {
+      const client = await pool.connect();
+      try {
+        await client.query(`SET search_path TO ${quoted}`);
+        await client.query("SET TIME ZONE 'Pacific/Auckland'");
+        return client;
+      } catch (error) { client.release(); throw error; }
+    },
+    async query(...args) {
+      const client = await this.connect();
+      try { return await client.query(...args); } finally { client.release(); }
+    },
+  };
+  try {
+    await pool.query(`CREATE SCHEMA ${quoted}`); created = true;
+    await applyMigrations(pool, { schema });
+    const accountId = '41111111-1111-4111-8111-111111111111';
+    await scoped.query(`INSERT INTO source_accounts (id, provider, provider_account_id) VALUES ($1, 'google-health', 'fixture')`, [accountId]);
+    const writer = createMetricWriter(scoped);
+    const sampleRows = normalizeOxygenSaturationSamples({ dataPoints: [
+      oxygenPoint({ time: '2026-09-06T23:59:59.999999999Z', offset: '0s', percentage: 96.123456789 }),
+      oxygenPoint({ id: 'second' }),
+    ] });
+    await assert.rejects(writer.upsertOxygenSaturationSamples(accountId, [sampleRows[0], { ...sampleRows[1], percentage: 101 }]));
+    assert.equal(Number((await scoped.query('SELECT COUNT(*) AS count FROM oxygen_saturation_samples')).rows[0].count), 0);
+    await writer.upsertOxygenSaturationSamples(accountId, sampleRows);
+    await writer.upsertOxygenSaturationSamples(accountId, sampleRows);
+    const row = (await scoped.query('SELECT percentage::text, civil_date::text, sample_time_text FROM oxygen_saturation_samples WHERE provider_key = $1', [sampleRows[0].providerKey])).rows[0];
+    assert.equal(row.percentage, '96.123456789');
+    assert.equal(row.civil_date, '2026-09-06');
+    assert.equal(row.sample_time_text, '2026-09-06T23:59:59.999999999Z');
+    await writer.upsertDailyOxygenSaturation(accountId, normalizeDailyOxygenSaturation({ dataPoints: [oxygenDailyPoint()] }));
+    assert.equal(Number((await scoped.query('SELECT lower_bound_percentage FROM oxygen_saturation_daily_summaries')).rows[0].lower_bound_percentage), 93.125);
+    await scoped.query(`INSERT INTO sleep_sessions (id, source_account_id, provider_key, civil_date, start_time, end_time,
+      start_offset_seconds, end_offset_seconds, sleep_type, duration_seconds)
+      VALUES ('51111111-1111-4111-8111-111111111111', $1, 'oxygen-night', '2026-09-07', '2026-09-06T23:00:00Z', '2026-09-07T00:00:00Z', 0, 0, 'stages', 3600)`, [accountId]);
+    await writer.upsertOxygenSaturationSamples(accountId, normalizeOxygenSaturationSamples({ dataPoints: [
+      oxygenPoint({ id: 'before-start', time: '2026-09-06T22:59:59.999999999Z', offset: '0s' }),
+      oxygenPoint({ id: 'exclusive-end', time: '2026-09-07T00:00:00Z', offset: '0s' }),
+    ] }));
+    const oxygenDay = await createOxygenRepository(scoped).getDay(accountId, '2026-09-07');
+    assert.equal(oxygenDay.samples.length, 1, 'Exact original timestamps must win over rounded PostgreSQL projections');
+    assert.equal(oxygenDay.samples[0].sampledAt, '2026-09-06T23:59:59.999999999Z');
+    assert.equal(oxygenDay.dailySummary.civilDate, '2026-09-07', 'Daily dates must survive the Auckland session timezone');
+    const exportRows = [];
+    for await (const sample of await createAnalysisDatasetService({ pool: scoped, batchSize: 1 }).streamOxygenSaturationSamples({ startDate: '2026-09-06', endDateExclusive: '2026-09-08' })) exportRows.push(sample);
+    assert.equal(exportRows.length, 4, 'Microsecond cursor ties must not skip or repeat provider records');
+  } finally {
+    try { const target = integrationSchemaToDrop(schema, created); if (target) await pool.query(`DROP SCHEMA ${target} CASCADE`); }
+    finally { await pool.end(); }
+  }
+});
 
 function createIntegrationSchemaName() {
   return `${integrationSchemaPrefix}${randomUUID().replaceAll('-', '')}`;
@@ -640,9 +702,10 @@ test('PostgreSQL repeated two-day syncs are compact no-ops and finalize each dat
         return result;
       },
     };
+    let claimClock = Date.now();
     const service = createSyncService({
       pool: database,
-      repository: createSyncRepository(database, { advisoryLocks: false }),
+      repository: createSyncRepository(database, { advisoryLocks: false, now: () => claimClock }),
       writer,
       gateway: {
         async request({ pageToken }) {
@@ -673,10 +736,15 @@ test('PostgreSQL repeated two-day syncs are compact no-ops and finalize each dat
         endDateExclusive: '2026-07-18',
         metrics: ['heart-rate'],
       });
+      // The test database may be remote. Use its clock for immediate queue claims,
+      // rather than assuming host and database clocks are synchronized to a millisecond.
+      claimClock = new Date((await database.query('SELECT clock_timestamp() AS current_time')).rows[0].current_time).getTime() + 1;
       await service.runOnce();
       assert.equal(finalizedDates.length, expectedFinalizationsAfterFirstPage);
+      claimClock = new Date((await database.query('SELECT clock_timestamp() AS current_time')).rows[0].current_time).getTime() + 1;
       await service.runOnce();
-      assert.equal((await service.status()).recent[0].status, 'completed');
+      const chunkStates = (await database.query('SELECT status, last_error, attempt_count FROM sync_chunks ORDER BY created_at')).rows;
+      assert.equal((await service.status()).recent[0].status, 'completed', JSON.stringify(chunkStates));
     }
 
     await runTwoPageJob(0);

@@ -39,6 +39,7 @@ function services() {
         resolution,
         days: [],
       }),
+      getOxygenRange: async (startDate, endDateExclusive, resolution, selection) => ({ startDate, endDateExclusive, resolution, selection, days: [] }),
       getArchiveStatus: async () => ({
         configured: true,
         pruningEnabled: false,
@@ -94,6 +95,22 @@ async function withServer(options, run) {
 async function login(baseUrl) {
   return signInCookie(baseUrl);
 }
+
+test('oxygen API is authenticated, no-store, and validates its own range and selectors', async () => {
+  await withServer(services(), async baseUrl => {
+    const url = `${baseUrl}/api/metrics/oxygen?start=2026-09-07&end=2026-09-08&resolution=night`;
+    assert.equal((await fetch(url)).status, 401);
+    const cookie = await login(baseUrl);
+    const response = await fetch(url, { headers: { cookie } });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('cache-control'), /no-store/);
+    assert.equal((await response.json()).data.resolution, 'night');
+    for (const query of ['start=2026-02-30&end=2026-03-02', 'start=2026-09-01&end=2026-09-08&resolution=night',
+      'start=2026-09-01&end=2026-09-02&resolution=bad', 'start=2026-09-01&end=2026-09-02&sampleSource=bad']) {
+      assert.equal((await fetch(`${baseUrl}/api/metrics/oxygen?${query}`, { headers: { cookie } })).status, 400);
+    }
+  });
+});
 
 test('authenticated health APIs expose dashboard and closed-open metric ranges', async () => {
   await withServer(services(), async (baseUrl) => {

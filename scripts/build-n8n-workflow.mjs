@@ -5,6 +5,8 @@ const workflowPath = new URL('../n8n/health-hub-workflow.json', import.meta.url)
 const prepareCode = `const input = $input.first().json.body ?? {};
 const operations = ['profile', 'identity', 'list', 'reconcile', 'rollUp'];
 const metrics = [
+  'oxygen-saturation',
+  'daily-oxygen-saturation',
   'sleep',
   'heart-rate',
   'daily-resting-heart-rate',
@@ -16,6 +18,8 @@ const combinations = {
   profile: ['sleep'],
   identity: ['sleep'],
   list: [
+    'oxygen-saturation',
+    'daily-oxygen-saturation',
     'heart-rate',
     'daily-resting-heart-rate',
     'active-energy-burned',
@@ -54,6 +58,8 @@ const snake = {
   'basal-energy-burned': 'basal_energy_burned',
 };
 const filterField = {
+  'oxygen-saturation': 'oxygen_saturation.sample_time.civil_time',
+  'daily-oxygen-saturation': 'daily_oxygen_saturation.date',
   sleep: 'sleep.interval.civil_end_time',
   'heart-rate': 'heart_rate.sample_time.civil_time',
   'daily-resting-heart-rate': 'daily_resting_heart_rate.date',

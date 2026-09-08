@@ -27,6 +27,7 @@ test('migrations create the permanent health archive tables once', async () => {
     '005_health_archive_catalog_month_constraint.sql',
     '006_better_auth.sql',
     '007_connector_credentials.sql',
+    '008_oxygen_saturation.sql',
   ]);
   assert.deepEqual(second, []);
   assert.deepEqual(
@@ -47,6 +48,8 @@ test('migrations create the permanent health archive tables once', async () => {
       'journal_entry_revisions',
       'journal_entry_tags',
       'journal_tags',
+      'oxygen_saturation_daily_summaries',
+      'oxygen_saturation_samples',
       'rateLimit',
       'schema_migrations',
       'session',

@@ -2,6 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
+.oxygen-heading { flex-wrap: wrap; }
+.oxygen-toolbar, .oxygen-source-row, .oxygen-table-paging { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 20px; }
+.oxygen-toolbar input, .oxygen-source select { color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-width: 100%; }
+.oxygen-source { display: grid; gap: 6px; min-width: 0; flex: 1 1 240px; color: var(--muted); font-size: .85rem; }
+.oxygen-source select { width: 100%; font: inherit; }
+.oxygen-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.oxygen-panel { min-width: 0; margin-bottom: 16px; }
+.oxygen-panel h2 { margin: 0 0 18px; font-size: 1rem; }
+.oxygen-facts { display: flex; flex-wrap: wrap; gap: 22px; margin: 0 0 18px; }
+.oxygen-facts dt, .oxygen-muted { color: var(--muted); font-size: .8rem; line-height: 1.65; }
+.oxygen-facts dd { margin: 6px 0 0; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.oxygen-chart { display: block; width: 100%; min-height: 210px; overflow: visible; }
+.oxygen-chart text { fill: var(--muted); font: 13px ui-sans-serif, system-ui, sans-serif; }
+.oxygen-grid { stroke: var(--border); stroke-width: 1; }
+.oxygen-line { fill: none; stroke: #85d2c8; stroke-width: 2; }
+.oxygen-band { fill: #85d2c8; opacity: .16; }
+.oxygen-chart circle { fill: #85d2c8; cursor: pointer; }
+.oxygen-chart circle:focus { stroke: #fff; stroke-width: 3; outline: none; }
+.oxygen-reading { display: block; min-height: 24px; color: #a9e4dc; font-size: .85rem; }
+.oxygen-table-scroll { overflow: auto; max-height: 420px; margin-top: 14px; }
+.oxygen-table-scroll table { width: 100%; border-collapse: collapse; font-size: .8rem; text-align: left; font-variant-numeric: tabular-nums; }
+.oxygen-table-scroll th, .oxygen-table-scroll td { padding: 12px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.oxygen-table-scroll th { color: var(--muted); background: var(--surface); position: sticky; top: 0; }
+.oxygen-date-link { color: #a9e4dc; text-decoration: underline; text-underline-offset: 3px; }
+.oxygen-notice { border-left: 3px solid #85d2c8; padding: 12px 16px; background: var(--surface); color: var(--muted); line-height: 1.6; }
+.oxygen-help { margin: 24px 0; color: var(--muted); font-size: .85rem; line-height: 1.7; }
+.oxygen-help summary, .oxygen-panel summary { cursor: pointer; }
+.oxygen-help a { color: #a9e4dc; text-decoration: underline; }
+.oxygen-export-metrics { display: grid; grid-template-columns: 1fr 1fr; }
+#todayOxygen { grid-column: 1 / -1; min-height: auto; }
+@media (max-width: 600px) {
+  .oxygen-summary-grid { grid-template-columns: 1fr; gap: 0; }
+  .oxygen-toolbar { gap: 7px; }
+  .oxygen-toolbar .button { padding: 9px 12px; }
+  .oxygen-facts dd { font-size: 1.12rem; }
+  .oxygen-chart { min-height: 0; }
+  .oxygen-chart text { font-size: 24px; }
+  .oxygen-chart circle { r: 5; }
+}
+
 :root {
   --page: #0b0e14;
   --surface: #121720;

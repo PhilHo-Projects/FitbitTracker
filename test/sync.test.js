@@ -180,6 +180,8 @@ test('default sync omits the currently unavailable Google total-calories rollup'
   assert.deepEqual(
     [...new Set(chunks.map(({ metric }) => metric))],
     [
+      'oxygen-saturation',
+      'daily-oxygen-saturation',
       'sleep',
       'heart-rate',
       'daily-resting-heart-rate',

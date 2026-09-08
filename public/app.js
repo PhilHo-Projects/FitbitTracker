@@ -12,6 +12,7 @@ import {
   sleepTrendRange,
 } from './health-ui.js';
 import { connectorBannerMessage, renderConnectorStatus, connectorCallbackMessage, syncJobOutcome } from './settings-ui.js';
+import { renderOxygenNight, renderOxygenTrend, renderOxygenCard } from './oxygen-ui.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -24,7 +25,10 @@ const stageNames = { awake: 'Awake', light: 'Light', deep: 'Deep', rem: 'REM' };
 const state = {
   selectedDate: today,
   activeView: 'today',
-  ranges: { heart: 'day', calories: 'day' },
+  ranges: { heart: 'day', calories: 'day', oxygen: 'day' },
+  oxygenSelection: {},
+  oxygenRequestVersion: 0,
+  oxygenData: null,
   sleepTrendPeriod: '7-days',
   dashboard: null,
   newestMeasurementAt: null,
@@ -85,7 +89,7 @@ async function fetchJson(url, options = {}) {
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) {
-    throw new Error(payload.message || `Request failed with HTTP ${response.status}`);
+    throw Object.assign(new Error(payload.message || `Request failed with HTTP ${response.status}`), { status: response.status });
   }
   return payload.data ?? payload;
 }
@@ -172,6 +176,7 @@ function renderStageSummary(sleep) {
 }
 
 function renderToday(data, journal) {
+  $('#todayOxygen').innerHTML = renderOxygenCard(data.oxygenSaturation);
   state.dashboard = data;
   state.newestMeasurementAt = data.newestMeasurementAt ?? null;
   state.journal = journal;
@@ -384,7 +389,7 @@ async function loadSleepWorkspace() {
             </section>`;
         })()
       : '<div class="workspace-empty">No sleep session stored for the selected date.</div>';
-    root.innerHTML = `${selectedNight}${sleepTrendMarkup(data.sessions)}`;
+    root.innerHTML = `<button type="button" class="button button-secondary" data-open-oxygen>Blood oxygen for ${escapeHtml(state.selectedDate)} →</button>${selectedNight}${sleepTrendMarkup(data.sessions)}`;
   } catch (error) {
     root.innerHTML = `<div class="workspace-empty error-copy">${escapeHtml(error.message)}</div>`;
   }
@@ -610,7 +615,7 @@ async function createExport(event) {
         detailLevel: exportType === 'archive' ? 'full' : 'analysis',
         includeJournal: $('#includeJournal').checked,
         includePng: exportType === 'png' || $('#includePng').checked,
-        metrics: ['sleep', 'heart', 'calories'],
+        metrics: $$('input[name="exportMetric"]:checked').map(input => input.value),
       }),
     });
     toast('Export queued.');
@@ -642,6 +647,7 @@ async function monitorSync(id, attempts = 0) {
     const result = syncJobOutcome(await fetchJson('/api/sync/status'), id);
     if (result !== 'pending') {
       if (state.activeView === 'today') await loadToday();
+      else if (state.activeView === 'oxygen') await loadOxygenWorkspace();
       else await refreshConnector();
       if (result === 'failed') {
         setSyncState('stale', 'Sync needs attention');
@@ -666,6 +672,7 @@ async function setView(view) {
     state.exportPoll = null;
   }
   state.activeView = view;
+  if (view !== 'oxygen') state.oxygenRequestVersion++;
   $$('.app-view').forEach((element) => {
     element.hidden = element.dataset.view !== view;
   });
@@ -675,11 +682,98 @@ async function setView(view) {
   if (view === 'today') await loadToday();
   if (view === 'sleep') await loadSleepWorkspace();
   if (view === 'heart') await loadHeartWorkspace();
+  if (view === 'oxygen') await loadOxygenWorkspace();
   if (view === 'calories') await loadCalorieWorkspace();
   if (view === 'journal') await loadJournal();
   if (view === 'export') await loadExports();
   if (view !== 'today') await refreshConnector();
 }
+
+async function loadOxygenWorkspace() {
+  const version = ++state.oxygenRequestVersion;
+  const date = state.selectedDate;
+  const preset = state.ranges.oxygen;
+  const root = $('#oxygenWorkspace');
+  $('#oxygenDate').value = date;
+  $('#oxygenDate').max = today;
+  $('#oxygenNext').disabled = date >= today;
+  $('#oxygenToday').disabled = date === today;
+  const range = dateRangeForPreset(preset, date);
+  const query = new URLSearchParams({ start: range.startDate, end: range.endDateExclusive, resolution: preset === 'day' ? 'night' : 'day', ...state.oxygenSelection });
+  const previous = state.oxygenQuery === query.toString() ? state.oxygenData : null;
+  root.setAttribute('aria-busy', 'true');
+  root.innerHTML = '<p class="workspace-empty" role="status">Loading blood oxygen…</p>' + (previous ? preset === 'day' ? renderOxygenNight(previous) : renderOxygenTrend(previous) : '');
+  try {
+    const data = await fetchJson(`/api/metrics/oxygen?${query}`);
+    if (version !== state.oxygenRequestVersion) return;
+    state.oxygenData = data;
+    state.oxygenQuery = query.toString();
+    root.innerHTML = preset === 'day' ? renderOxygenNight(data) : renderOxygenTrend(data);
+  } catch (error) {
+    if (version !== state.oxygenRequestVersion) return;
+    if (error.status === 400 && Object.keys(state.oxygenSelection).length) {
+      state.oxygenSelection = {};
+      await loadOxygenWorkspace();
+      return;
+    }
+    root.innerHTML = `<p class="oxygen-notice" role="alert">${escapeHtml(error.message)}${previous ? ' Showing the last loaded view.' : ''}</p><button type="button" class="button button-secondary" data-oxygen-retry>Retry</button>` + (previous ? preset === 'day' ? renderOxygenNight(previous) : renderOxygenTrend(previous) : '');
+  } finally {
+    if (version === state.oxygenRequestVersion) root.setAttribute('aria-busy', 'false');
+  }
+}
+
+function selectOxygenDate(date) {
+  if (!date || date > today) return;
+  state.selectedDate = date;
+  state.oxygenSelection = {};
+  updateDateControls();
+  loadOxygenWorkspace();
+}
+
+$('#oxygenPrevious').addEventListener('click', () => selectOxygenDate(shiftDate(state.selectedDate, -1)));
+$('#oxygenNext').addEventListener('click', () => selectOxygenDate(shiftDate(state.selectedDate, 1)));
+$('#oxygenToday').addEventListener('click', () => selectOxygenDate(today));
+$('#oxygenDate').addEventListener('change', event => selectOxygenDate(event.target.value));
+$('#oxygenWorkspace').addEventListener('change', event => {
+  const type = event.target.dataset.oxygenSource;
+  if (!type) return;
+  if (event.target.value) state.oxygenSelection[`${type}Source`] = event.target.value;
+  else delete state.oxygenSelection[`${type}Source`];
+  loadOxygenWorkspace();
+});
+function oxygenPointFocus(event) {
+  const point = event.target.closest('[data-oxygen-point]');
+  if (point && $('#oxygenReading')) $('#oxygenReading').textContent = point.dataset.oxygenPoint;
+}
+$('#oxygenWorkspace').addEventListener('focusin', oxygenPointFocus);
+$('#oxygenWorkspace').addEventListener('pointerover', oxygenPointFocus);
+$('#oxygenWorkspace').addEventListener('click', event => {
+  oxygenPointFocus(event);
+  const date = event.target.closest('[data-oxygen-date]')?.dataset.oxygenDate;
+  if (date) {
+    state.ranges.oxygen = 'day';
+    $$('[data-range-tabs="oxygen"] [data-range]').forEach(button => {
+      button.classList.toggle('is-active', button.dataset.range === 'day');
+      button.setAttribute('aria-pressed', String(button.dataset.range === 'day'));
+    });
+    selectOxygenDate(date);
+  }
+  if (event.target.closest('[data-oxygen-retry]')) loadOxygenWorkspace();
+  const page = event.target.closest('[data-oxygen-page]');
+  if (page && state.oxygenData) $('#oxygenWorkspace').innerHTML = renderOxygenNight(state.oxygenData, { readingPage: Number(page.dataset.oxygenPage) });
+});
+$('#oxygenWorkspace').addEventListener('keydown', event => {
+  if (event.target.matches('circle[data-oxygen-date]') && ['Enter', ' '].includes(event.key)) {
+    event.preventDefault(); event.target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }
+});
+$('#oxygenExport').addEventListener('click', () => {
+  const range = dateRangeForPreset(state.ranges.oxygen, state.selectedDate);
+  $('#exportStart').value = state.ranges.oxygen === 'day' ? shiftDate(state.selectedDate, -1) : range.startDate;
+  $('#exportEnd').value = range.endDateExclusive;
+  $$('input[name="exportMetric"]').forEach(input => { input.checked = input.value === 'oxygen'; });
+  setView('export');
+});
 
 function addSuggestedTag(tag) {
   const current = $('#journalTags').value.split(',').map((value) => value.trim()).filter(Boolean);
@@ -706,14 +800,17 @@ $$('[data-range-tabs]').forEach((group) => {
     const button = event.target.closest('[data-range]');
     if (!button) return;
     $$('[data-range]', group).forEach((item) => item.classList.toggle('is-active', item === button));
+    $$('[data-range]', group).forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
     const metric = group.dataset.rangeTabs;
     state.ranges[metric] = button.dataset.range;
     if (metric === 'heart') loadHeartWorkspace();
     if (metric === 'calories') loadCalorieWorkspace();
+    if (metric === 'oxygen') { state.oxygenSelection = {}; loadOxygenWorkspace(); }
   });
 });
 
 $('#sleepWorkspace').addEventListener('click', (event) => {
+  if (event.target.closest('[data-open-oxygen]')) { setView('oxygen'); return; }
   const button = event.target.closest('[data-sleep-trend-period]');
   if (!button || button.dataset.sleepTrendPeriod === state.sleepTrendPeriod) return;
   state.sleepTrendPeriod = button.dataset.sleepTrendPeriod;
@@ -785,7 +882,7 @@ const initialView = window.location.pathname === '/settings'
   ? 'settings'
   : window.location.hash.slice(1);
 setView(
-  ['sleep', 'heart', 'calories', 'journal', 'export', 'settings'].includes(initialView)
+  ['sleep', 'heart', 'oxygen', 'calories', 'journal', 'export', 'settings'].includes(initialView)
     ? initialView
     : 'today',
 );

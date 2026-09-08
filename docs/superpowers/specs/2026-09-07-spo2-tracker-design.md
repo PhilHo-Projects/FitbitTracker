@@ -2,7 +2,7 @@
 
 Date: 2026-09-07
 
-Status: Research-backed proposal for review; implementation has not started.
+Status: Accepted and implemented locally, 2026-09-07. See the [implementation and release runbook](../../spo2-runbook.md) for verification evidence and remaining live-account checks. Production deployment and backfill have not been performed.
 
 Baseline inspected: `codex/owned-google-health-connector`, commit `c44fcc0`.
 

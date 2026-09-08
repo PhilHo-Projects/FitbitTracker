@@ -1,10 +1,16 @@
 # Personal Health Data Hub
 
-A private, single-user health archive for sleep, heart rate, calories, and dated journal context.
+A private, single-user health archive for sleep, heart rate, blood oxygen (SpO₂), calories, and dated journal context.
 The app stores exact source records in PostgreSQL, presents a phone-friendly daily view, and
 produces structured exports for later analysis by ChatGPT, NVIDIA, OpenAI, or another provider.
 
 Production URL: `https://fitbit.philippeho.dev`
+
+SpO₂ implementation and release status are documented in [the runbook](docs/spo2-runbook.md).
+The workspace separates Google daily confidence bounds from observed sample statistics, includes
+the previous evening of the selected sleep session, and preserves gaps and source ambiguity.
+Oxygen exports use schema 1.1.0; raw samples use recorded civil dates. Oxygen is retained locally
+in PostgreSQL and is not part of the existing R2 v1 archive bundles.
 
 ## Architecture
 

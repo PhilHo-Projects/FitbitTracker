@@ -11,6 +11,7 @@ import { createExportService } from '../lib/exports/service.js';
 import { createJournalCipher } from '../lib/journal/crypto.js';
 import { createJournalRepository } from '../lib/journal/repository.js';
 import { createApp } from '../server.js';
+import { createAuth } from '../lib/auth.js';
 
 const port = Number(process.env.PORT || 4173);
 const anchorDate = process.env.FIXTURE_DATE || '2026-07-16';
@@ -40,7 +41,8 @@ const exportService = createExportService({
 const env = {
   NODE_ENV: 'development',
   DASHBOARD_PASSWORD: '0000',
-  DASHBOARD_SESSION_SECRET: 'fixture-preview-session-secret',
+  DASHBOARD_SESSION_SECRET: crypto.randomBytes(32).toString('hex'),
+  PUBLIC_ORIGIN: `http://127.0.0.1:${port}`,
   JOURNAL_ENCRYPTION_KEYS: keyring,
 };
 const syncService = {
@@ -51,6 +53,9 @@ const syncService = {
     return { active: [], recent: [] };
   },
 };
+await createAuth({ pool, env, allowSignUp: true }).api.signUpEmail({
+  body: { email: 'preview@example.test', password: 'fixture-password-0000', name: 'Synthetic preview' },
+});
 const app = createApp({
   env,
   pool,
@@ -62,7 +67,7 @@ const app = createApp({
   now: () => Date.parse(`${anchorDate}T18:00:00.000Z`),
 });
 const server = app.listen(port, '127.0.0.1', () => {
-  console.log(`Fixture preview: http://127.0.0.1:${port} (password: 0000)`);
+  console.log(`Fixture preview: http://127.0.0.1:${port} (preview@example.test / fixture-password-0000; synthetic data only)`);
 });
 exportService.start();
 

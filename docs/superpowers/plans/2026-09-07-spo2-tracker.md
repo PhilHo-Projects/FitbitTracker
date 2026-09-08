@@ -2,7 +2,11 @@
 
 > **For agentic workers:** Execute inline, task by task, using `superpowers:executing-plans` when implementation is requested. Do not spawn subagents or create worktrees. Repository `AGENTS.md` and Philippe's current instructions govern execution; this document does not authorize deployment, consent, production backfill, or data-safety gate changes.
 
-**Status:** Proposed plan, written 2026-09-07. No tasks below have been implemented or run. Code blocks are implementation contracts and regression examples, not claims about existing exports or passing tests.
+**Status:** Local implementation complete, 2026-09-07. Tasks 1–7 and Task 8's local verification/documentation are implemented in the existing `codex/owned-google-health-connector` checkout. The full suite passed 292 tests with no skips, including real PostgreSQL; final display refinements passed their focused UI checks. Build and generated-workflow checks passed. No production deployment, canary, or backfill has been performed.
+
+**Continuation checkpoint for Codex or Claude:** Read [the runbook](../../spo2-runbook.md), `git status`, and the latest feature commit first. Do not restart implementation or generate another worktree. The next work is release preparation: inspect the live connector and obtain safe structural evidence for both endpoints, then prepare a bounded canary for an authorized release. The oxygen implementation spans normalizers, migration 008, writer/repository, both sync transports, API, workspace, and exports. Additional tests are in `test/oxygen-*.test.js`; the dedicated PostgreSQL test is in the existing `test/postgres-integration.test.js` harness. Existing checkbox text below records the historical proposed sequence, including per-slice commits that were consolidated; this checkpoint and the runbook record actual execution evidence.
+
+Implementation choices within the accepted design: the terminal-summary helper is called `recalculateOnCompletion`; export daily/source metadata lives in `oxygenDailySummaries`; raw records live in `oxygenSaturationSamples`. Chart reduction treats 1,200 points as a target and preserves every discontinuity even when many short segments exceed that target. UI reading tables page through all retained records. The fixture preview now seeds an in-memory Better Auth owner so it works with the current login screen.
 
 **Goal:** Add a trustworthy nightly SpO₂ tracker with preserved provider data, sleep context, daily trends, and complete selected exports.
 
@@ -608,4 +612,4 @@ Record these facts in the eventual handoff:
 | Storage | Raw clamp unchanged, additive rows retained, oxygen cold archive unsupported |
 | Remaining action | Specific consent, deployment, or separate archive decision if still required |
 
-The immediate deliverables of the overnight request are this plan and its linked spec. Future execution defaults to inline work in the existing checkout.
+The overnight implementation now accompanies this plan and its linked spec. Future execution defaults to inline work in the existing checkout; only the explicitly marked live release steps remain.

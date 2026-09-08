@@ -35,6 +35,7 @@
           <button class="nav-item is-active" type="button" data-nav="today">Today</button>
           <button class="nav-item" type="button" data-nav="sleep">Sleep</button>
           <button class="nav-item" type="button" data-nav="heart">Heart</button>
+          <button class="nav-item" type="button" data-nav="oxygen" aria-label="Blood oxygen">SpO₂</button>
           <button class="nav-item" type="button" data-nav="calories">Calories</button>
           <button class="nav-item" type="button" data-nav="journal">Journal</button>
           <button class="nav-item" type="button" data-nav="export">Export</button>
@@ -142,6 +143,7 @@
             <p id="calorieMissing" class="metric-empty" hidden>No calorie expenditure stored for this date.</p>
           </section>
 
+          <section id="todayOxygen" class="metric-panel compact-panel interactive-panel" data-open-view="oxygen" tabindex="0" aria-labelledby="oxygenSummaryHeading"><h2 id="oxygenSummaryHeading">SpO₂</h2></section>
           <section class="context-panel" aria-labelledby="contextHeading">
             <div>
               <span class="metric-name">Context</span>
@@ -173,6 +175,29 @@
           </div>
         </div>
         <div id="heartWorkspace" class="workspace-content"></div>
+      </section>
+
+      <section id="view-oxygen" class="app-view" data-view="oxygen" hidden>
+        <div class="workspace-heading oxygen-heading">
+          <div><p class="view-kicker">Blood oxygen workspace</p><h1>SpO₂</h1><p>Daily estimates and individual readings in sleep context.</p></div>
+          <div class="range-tabs" data-range-tabs="oxygen" aria-label="Blood oxygen period">
+            <button type="button" data-range="day" class="is-active" aria-pressed="true">Night</button>
+            <button type="button" data-range="week" aria-pressed="false">7 days</button>
+            <button type="button" data-range="month" aria-pressed="false">30 days</button>
+            <button type="button" data-range="year" aria-pressed="false">Year</button>
+          </div>
+        </div>
+        <div class="oxygen-toolbar">
+          <button id="oxygenPrevious" class="button button-secondary" type="button" aria-label="Previous oxygen date">←</button>
+          <label><span class="sr-only">Blood oxygen date</span><input id="oxygenDate" type="date" required /></label>
+          <button id="oxygenNext" class="button button-secondary" type="button" aria-label="Next oxygen date">→</button>
+          <button id="oxygenToday" class="button button-secondary" type="button">Today</button>
+          <button class="button button-secondary" type="button" data-nav="sleep">Sleep</button>
+          <button class="button button-secondary" type="button" data-nav="journal">Journal</button>
+          <button id="oxygenExport" class="button button-secondary" type="button">Export</button>
+        </div>
+        <div id="oxygenWorkspace" class="workspace-content" aria-live="polite"></div>
+        <details class="oxygen-help"><summary>About blood oxygen estimates</summary><p>Wearable estimates for personal tracking; not a medical monitor. Sleep and device processing can delay results. An empty response does not establish whether this account or device supports individual readings.</p><p><a href="https://support.google.com/fitbit/answer/14226120" target="_blank" rel="noopener noreferrer">Google’s blood oxygen guide</a></p></details>
       </section>
 
       <section id="view-calories" class="app-view" data-view="calories" hidden>
@@ -251,6 +276,13 @@
             </fieldset>
             <fieldset>
               <legend>Options</legend>
+              <div class="oxygen-export-metrics" role="group" aria-label="Export metrics">
+                <label class="check-row"><input type="checkbox" name="exportMetric" value="sleep" checked /><span>Sleep</span></label>
+                <label class="check-row"><input type="checkbox" name="exportMetric" value="heart" checked /><span>Heart</span></label>
+                <label class="check-row"><input type="checkbox" name="exportMetric" value="calories" checked /><span>Calories</span></label>
+                <label class="check-row"><input type="checkbox" name="exportMetric" value="oxygen" checked /><span>Blood oxygen</span></label>
+              </div>
+              <p class="oxygen-muted">Raw oxygen uses recorded civil dates. Include the previous date to capture the evening shown in a night view.</p>
               <label class="check-row"><input id="includeJournal" type="checkbox" /><span>Include decrypted journal.md</span></label>
               <label class="check-row"><input id="includePng" type="checkbox" checked /><span>Include PNG summary in ZIP</span></label>
             </fieldset>
