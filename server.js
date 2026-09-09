@@ -26,6 +26,9 @@ import { createExportRouter } from './lib/routes/export-routes.js';
 import { createHealthRouter } from './lib/routes/health-routes.js';
 import { createJournalRouter } from './lib/routes/journal-routes.js';
 import { createSyncRouter } from './lib/routes/sync-routes.js';
+import { createSleepRouter } from './lib/routes/sleep-routes.js';
+import { createSleepService } from './lib/sleep/service.js';
+import { createSleepCheckInRepository } from './lib/sleep/check-ins.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -79,6 +82,9 @@ export function createApp(options = {}) {
   }
 
   const app = express();
+  const sleepService = pool ? createSleepService({ pool }) : null;
+  const sleepCheckIns = pool && env.JOURNAL_ENCRYPTION_KEYS
+    ? createSleepCheckInRepository(pool, createJournalCipher(env.JOURNAL_ENCRYPTION_KEYS)) : null;
   const publicDir = path.join(__dirname, 'public');
   const webhookUrl = env.N8N_WEBHOOK_URL || '';
   const webhookToken = env.N8N_WEBHOOK_TOKEN || '';
@@ -162,8 +168,9 @@ export function createApp(options = {}) {
   });
 
   if (healthRepository) {
-    app.use('/api', createHealthRouter({ repository: healthRepository, requireAuth }));
+    app.use('/api', createHealthRouter({ repository: healthRepository, requireAuth, sleepService }));
   }
+  if (sleepService) app.use('/api/sleep', createSleepRouter({ service: sleepService, checkIns: sleepCheckIns, requireAuth }));
   if (journalRepository) {
     app.use('/api/journal', createJournalRouter({ repository: journalRepository, requireAuth }));
   } else {
@@ -289,6 +296,7 @@ if (isDirectRun) {
         datasetService: createAnalysisDatasetService({
           pool,
           journalRepository,
+          sleepCheckIns: process.env.JOURNAL_ENCRYPTION_KEYS ? createSleepCheckInRepository(pool, createJournalCipher(process.env.JOURNAL_ENCRYPTION_KEYS)) : null,
           availabilityOptions: {
             archiveConfigured: process.env.HEALTH_ARCHIVE_ENABLED === 'true',
             archivePruningEnabled: process.env.HEALTH_RAW_PRUNING_ENABLED === 'true',

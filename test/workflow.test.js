@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { buildGoogleHealthRequest } from '../lib/jobs/google-health-request.js';
+import { SLEEP_VITAL_METRICS } from '../lib/metrics/sleep-vitals.js';
 
 const workflowPath = new URL('../n8n/health-hub-workflow.json', import.meta.url);
 const legacyWorkflowPath = new URL('../n8n/fitness-workflow.json', import.meta.url);
@@ -9,6 +11,19 @@ const legacyWorkflowPath = new URL('../n8n/fitness-workflow.json', import.meta.u
 async function loadWorkflow() {
   return JSON.parse(await readFile(workflowPath, 'utf8'));
 }
+
+test('new sleep streams produce identical direct and generated gateway requests', async()=>{
+  const workflow=await loadWorkflow(),code=nodeByName(workflow,'Validate and Prepare').parameters.jsCode;
+  for(const metric of SLEEP_VITAL_METRICS) {
+    const request={operation:'list',metric,startDate:'2026-09-01',endDateExclusive:'2026-09-09',pageToken:'page-2'};
+    const prepared=runInNewContext(`(function(){${code}})()`,{$input:{first:()=>({json:{body:request}})}})[0].json.request;
+    const direct=buildGoogleHealthRequest(request);
+    assert.equal(prepared.method,direct.method);
+    const generatedUrl=new URL(prepared.url),directUrl=new URL(direct.url);
+    assert.equal(generatedUrl.origin+generatedUrl.pathname,directUrl.origin+directUrl.pathname);
+    assert.deepEqual(Object.fromEntries(generatedUrl.searchParams),Object.fromEntries(directUrl.searchParams));
+  }
+});
 
 async function loadLegacyWorkflow() {
   return JSON.parse(await readFile(legacyWorkflowPath, 'utf8'));

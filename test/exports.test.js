@@ -59,7 +59,7 @@ test('analysis datasets keep exact summaries primary and include raw records onl
       false,
     );
 
-    assert.equal(analysis.schemaVersion, '1.1.0');
+    assert.equal(analysis.schemaVersion, '1.2.0');
     assert.equal(analysis.timezone, 'America/Toronto');
     assert.equal(analysis.dailySummaries.length, 2);
     assert.equal(analysis.sleepSessions.length, 2);
@@ -138,6 +138,7 @@ test('background export jobs create inspectable ZIP and PNG artifacts and expire
     const zip = new AdmZip(completedZip.filePath);
     const names = zip.getEntries().map(({ entryName }) => entryName).sort();
     assert.deepEqual(names, [
+      'analysis.json',
       'daily-summary.csv',
       'journal.md',
       'manifest.json',
@@ -146,10 +147,10 @@ test('background export jobs create inspectable ZIP and PNG artifacts and expire
       'summary.png',
     ]);
     const manifest = JSON.parse(zip.readAsText('manifest.json'));
-    assert.equal(manifest.schemaVersion, '1.1.0');
+    assert.equal(manifest.schemaVersion, '1.2.0');
     assert.equal(manifest.range.endDateExclusive, '2026-07-17');
     assert.equal(manifest.journalIncluded, true);
-    assert.equal(manifest.files.length, 6);
+    assert.equal(manifest.files.length, 7);
     assert.equal(manifest.rawCoverage, null);
 
     const archiveJob = await service.create({

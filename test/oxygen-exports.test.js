@@ -23,7 +23,7 @@ test('oxygen-only exports retain every source, precision and dates missing other
   const datasetService = createAnalysisDatasetService({ pool, batchSize: 1, journalRepository: { list: () => assert.fail('journal requires opt-in') } });
   const range = { startDate: '2026-09-06', endDateExclusive: '2026-09-08' };
   const analysis = await datasetService.buildAnalysisDataset(range, ['oxygen']);
-  assert.equal(analysis.schemaVersion, '1.1.0');
+  assert.equal(analysis.schemaVersion, '1.2.0');
   assert.equal(analysis.oxygenDailySummaries.length, 2);
   assert.equal(analysis.oxygenSaturationSamples.length, 0);
   assert.deepEqual(analysis.dailySummaries.map(row => row.date), ['2026-09-06', '2026-09-07']);
@@ -44,7 +44,7 @@ test('oxygen-only exports retain every source, precision and dates missing other
   assert.equal(completed.status, 'completed', completed.errorMessage);
   const zip = new AdmZip(await readFile(completed.filePath));
   const manifest = JSON.parse(zip.readAsText('manifest.json'));
-  assert.equal(manifest.schemaVersion, '1.1.0');
+  assert.equal(manifest.schemaVersion, '1.2.0');
   assert.equal(manifest.units.oxygenSaturation, 'percent');
   assert.equal(manifest.rawCoverage.oxygen.coldArchiveSupported, false);
   assert.equal(manifest.rawCoverage.oxygen.sampleCount, 3);
@@ -56,7 +56,7 @@ test('oxygen-only exports retain every source, precision and dates missing other
 });
 
 test('oxygen PNG keeps decimal percentages and zero without rounding them to missing', () => {
-  const svg = buildSummarySvg({ schemaVersion: '1.1.0', range: { startDate: '2026-09-07', endDateExclusive: '2026-09-08' }, timezone: 'America/Toronto',
+  const svg = buildSummarySvg({ schemaVersion: '1.2.0', range: { startDate: '2026-09-07', endDateExclusive: '2026-09-08' }, timezone: 'America/Toronto',
     metrics: ['oxygen'], dailySummaries: [{ date: '2026-09-07', oxygenAveragePercentage: 0 }], sleepStages: [], coverageWarnings: [] });
   assert.match(svg, /0\.0%/); assert.match(svg, /Blood oxygen/); assert.match(svg, /1 days measured/);
 });

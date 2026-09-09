@@ -1,0 +1,691 @@
+.sleep-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 26px;
+}
+.sleep-heading h1 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  letter-spacing: -0.045em;
+  margin: 5px 0 8px;
+}
+.sleep-heading p,
+.sleep-meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+.sleep-date-controls,
+.sleep-session-row,
+.sleep-form-actions,
+.sleep-month-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.sleep-date-controls input,
+.sleep-session-row select,
+.sleep-source-label select,
+.sleep-trend-select select,
+.sleep-goal input {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 8px 10px;
+  max-width: 100%;
+  font: inherit;
+}
+.sleep-session-row {
+  margin-bottom: 20px;
+  justify-content: space-between;
+}
+.sleep-session-row > label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
+  max-width: 100%;
+}
+.sleep-session-row select {
+  min-width: 0;
+}
+.sleep-badge {
+  border: 1px solid var(--awake);
+  color: var(--awake);
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+}
+.sleep-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(270px, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.sleep-main-column,
+.sleep-side-column {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+.sleep-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  padding: 25px;
+  min-width: 0;
+}
+.sleep-card h2 {
+  font-size: 1.08rem;
+  font-weight: 650;
+  margin: 0 0 15px;
+  letter-spacing: -0.025em;
+}
+.sleep-card h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+.sleep-card p {
+  line-height: 1.65;
+}
+.sleep-report-card {
+  background:
+    linear-gradient(140deg, rgba(118, 164, 246, 0.085), transparent 70%),
+    var(--surface);
+}
+.sleep-primary-number {
+  font-size: clamp(2.5rem, 5vw, 3.8rem);
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.065em;
+  font-variant-numeric: tabular-nums;
+  margin: 12px 0;
+}
+.sleep-secondary-numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.sleep-assessment-title {
+  font-size: 1.08rem;
+  margin: 26px 0 10px;
+  max-width: 54ch;
+}
+.sleep-findings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.sleep-findings a {
+  color: var(--accent);
+  font-size: 0.77rem;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  padding: 9px 0;
+  min-height: 44px;
+}
+.sleep-data-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 8px 0 20px;
+}
+.sleep-indicators {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+  gap: 14px;
+}
+.sleep-indicators a {
+  display: grid;
+  gap: 8px;
+  min-height: 48px;
+}
+.sleep-indicators span {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.sleep-indicators strong {
+  font-size: 0.78rem;
+  font-weight: 550;
+}
+.sleep-indicator-detail {
+  padding-top: 22px;
+  scroll-margin-top: 125px;
+}
+.sleep-evidence {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0;
+  scroll-margin-top: 130px;
+}
+.sleep-evidence summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  font-size: 0.84rem;
+}
+.sleep-evidence summary strong {
+  text-align: right;
+  font-weight: 550;
+}
+.sleep-evidence p {
+  color: var(--muted);
+  font-size: 0.79rem;
+  margin: 9px 0;
+}
+.sleep-goal {
+  margin-top: 15px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.sleep-goal form {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0;
+}
+.sleep-goal label {
+  display: grid;
+  gap: 6px;
+}
+.sleep-data-status {
+  position: relative;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.sleep-data-status[open] {
+  flex-basis: 100%;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.sleep-data-status p {
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+#sleepWorkspace summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 12px 0;
+}
+#sleepWorkspace button,
+#sleepWorkspace a,
+#sleepWorkspace input,
+#sleepWorkspace select {
+  min-height: 44px;
+}
+#sleepWorkspace :focus-visible,
+.mobile-nav :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.sleep-section-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sleep-section-heading h2 {
+  margin-top: 5px;
+}
+.sleep-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  margin: 5px 0 22px;
+}
+.sleep-legend span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.sleep-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.sleep-track-layout {
+  display: grid;
+  grid-template-columns: 65px minmax(0, 1fr);
+  gap: 10px;
+}
+.sleep-track-labels {
+  display: grid;
+  grid-template-rows: repeat(4, 82.5px);
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.sleep-track-labels > span {
+  padding-top: 15px;
+}
+.sleep-track-labels small {
+  display: block;
+  color: var(--faint);
+  margin-top: 5px;
+}
+.sleep-track-plot {
+  min-width: 0;
+}
+.sleep-track-plot svg {
+  display: block;
+  width: 100%;
+  height: 330px;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+.sleep-svg-empty {
+  fill: var(--muted);
+  font-size: 22px;
+}
+.sleep-time-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.66rem;
+  padding-top: 8px;
+}
+.sleep-track-plot input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  margin: 0;
+}
+.sleep-cursor-readout {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 14px;
+  gap: 12px;
+  margin-top: 14px;
+}
+.sleep-cursor-readout div {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+}
+.sleep-cursor-readout span,
+.sleep-cursor-readout small {
+  color: var(--muted);
+  font-size: 0.65rem;
+  overflow-wrap: anywhere;
+}
+.sleep-cursor-readout strong {
+  font-size: 0.78rem;
+  font-weight: 550;
+  text-transform: capitalize;
+}
+.sleep-diagnostics {
+  margin-top: 15px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.sleep-source-label {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0;
+}
+.sleep-side-column fieldset {
+  border: 0;
+  padding: 0;
+  margin: 20px 0;
+  min-width: 0;
+}
+.sleep-side-column legend,
+.sleep-note-label {
+  font-size: 0.8rem;
+  margin-bottom: 10px;
+}
+.sleep-rating-options,
+.sleep-choice-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.sleep-rating-options label,
+.sleep-choice-options label {
+  display: flex;
+  position: relative;
+  cursor: pointer;
+}
+.sleep-rating-options input,
+.sleep-choice-options input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  min-height: 1px !important;
+}
+.sleep-rating-options span,
+.sleep-choice-options span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.sleep-rating-options input:checked + span,
+.sleep-choice-options input:checked + span {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.sleep-rating-options input:focus-visible + span,
+.sleep-choice-options input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.sleep-note-label {
+  display: grid;
+  gap: 8px;
+}
+.sleep-note-label textarea {
+  width: 100%;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--text);
+  resize: vertical;
+}
+.sleep-form-actions {
+  margin-top: 14px;
+}
+.sleep-side-column .button {
+  font-size: 0.74rem;
+  padding: 9px 12px;
+}
+.sleep-side-column details {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.sleep-supporting-measurement {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--border);
+}
+.sleep-supporting-measurement span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.sleep-supporting-measurement strong {
+  font-size: 0.95rem;
+  font-weight: 550;
+  text-align: right;
+}
+.sleep-trend-controls {
+  display: flex;
+  gap: 4px;
+}
+.sleep-trend-controls .button {
+  padding: 8px;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.sleep-trend-controls [aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sleep-trend-select {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.8rem;
+  margin: 10px 0;
+}
+.sleep-trend-chart {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--sleep-columns), minmax(0, 1fr));
+  gap: 6px;
+  height: 180px;
+  margin: 32px 0 42px;
+  border-bottom: 1px solid var(--border);
+}
+.sleep-trend-column {
+  position: relative;
+  display: flex;
+  align-items: end;
+  height: 100%;
+  min-height: 0 !important;
+  z-index: 1;
+}
+.sleep-trend-bar {
+  display: block;
+  width: 100%;
+  background: var(--light);
+  opacity: 0.7;
+  border-radius: 4px 4px 0 0;
+}
+.sleep-trend-column:hover .sleep-trend-bar,
+.sleep-trend-column:focus-visible .sleep-trend-bar {
+  opacity: 1;
+}
+.sleep-trend-bar.is-missing {
+  height: 3px !important;
+  background: var(--border-strong);
+}
+.sleep-trend-tick {
+  position: absolute;
+  left: 50%;
+  bottom: -22px;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+.sleep-trend-goal {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--accent);
+  pointer-events: none;
+  z-index: 2;
+}
+.sleep-trend-goal span {
+  position: absolute;
+  top: -20px;
+  right: 0;
+  font-size: 0.65rem;
+  color: var(--accent);
+}
+.sleep-rating-dot {
+  position: absolute;
+  bottom: -33px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.sleep-trend-table {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.sleep-table-scroll {
+  max-height: 360px;
+  overflow: auto;
+}
+.sleep-table-scroll table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.74rem;
+  text-align: left;
+}
+.sleep-table-scroll th,
+.sleep-table-scroll td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.sleep-text-button {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.mobile-nav {
+  display: none;
+}
+.more-workspaces {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.more-workspaces .button {
+  min-height: 72px;
+}
+@media (max-width: 980px) {
+  .sleep-overview-grid {
+    grid-template-columns: minmax(0, 1fr) 275px;
+    gap: 14px;
+  }
+  .sleep-card {
+    padding: 18px;
+  }
+  .sleep-heading {
+    flex-wrap: wrap;
+  }
+  .sleep-cursor-readout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sleep-indicators {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sleep-section-heading {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 680px) {
+  .app-main {
+    padding-bottom: 95px;
+  }
+  .main-nav {
+    display: none;
+  }
+  .header-inner {
+    padding: 10px 0;
+  }
+  .header-actions .button-primary {
+    display: inline-flex;
+    min-height: 44px;
+  }
+  .mobile-nav {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 5px 10px max(5px, env(safe-area-inset-bottom));
+    z-index: 30;
+  }
+  .mobile-nav .nav-item {
+    min-height: 50px;
+    font-size: 0.8rem;
+  }
+  .sleep-overview-grid {
+    display: flex;
+    flex-direction: column;
+  }
+  .sleep-main-column,
+  .sleep-side-column {
+    display: contents;
+  }
+  .sleep-report-card {
+    order: 0;
+  }
+  .sleep-side-column > .sleep-card:first-child {
+    order: 2;
+    width: 100%;
+  }
+  .sleep-main-column > .sleep-timeline {
+    order: 1;
+  }
+  .sleep-main-column > [data-sleep-trends] {
+    order: 4;
+  }
+  .sleep-main-column > .sleep-card:last-child {
+    order: 5;
+  }
+  .sleep-side-column > .sleep-card:last-child {
+    order: 3;
+    width: 100%;
+  }
+  .sleep-card {
+    width: 100%;
+    padding: 18px 14px;
+    border-radius: 12px;
+  }
+  .sleep-heading {
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  .sleep-date-controls {
+    width: 100%;
+    gap: 5px;
+  }
+  .sleep-date-controls label {
+    flex: 1;
+    min-width: 125px;
+  }
+  .sleep-date-controls input {
+    width: 100%;
+    font-size: 0.8rem;
+  }
+  .sleep-date-controls .button {
+    padding: 8px 10px;
+    font-size: 0.72rem;
+  }
+  .sleep-track-layout {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 5px;
+  }
+  .sleep-svg-empty {
+    font-size: 33px;
+  }
+  .sleep-primary-number {
+    font-size: 3.1rem;
+  }
+  .sleep-data-note {
+    font-size: 0.75rem;
+  }
+  .sleep-session-row > label {
+    width: 100%;
+  }
+  .sleep-session-row select {
+    flex: 1;
+    font-size: 0.73rem;
+  }
+  .sleep-trend-chart {
+    gap: 3px;
+  }
+  .sleep-trend-chart[style*="30"]
+    .sleep-trend-column:nth-of-type(2n)
+    .sleep-trend-tick {
+    visibility: hidden;
+  }
+  #toast {
+    bottom: 76px;
+  }
+}

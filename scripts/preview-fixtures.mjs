@@ -10,6 +10,8 @@ import { createAnalysisDatasetService } from '../lib/exports/dataset.js';
 import { createExportService } from '../lib/exports/service.js';
 import { createJournalCipher } from '../lib/journal/crypto.js';
 import { createJournalRepository } from '../lib/journal/repository.js';
+import { createSleepCheckInRepository } from '../lib/sleep/check-ins.js';
+import { seedSleepOverviewFixtures } from '../lib/db/sleep-fixtures.js';
 import { createApp } from '../server.js';
 import { createAuth } from '../lib/auth.js';
 import { civilDateInTimeZone } from '../public/health-ui.js';
@@ -25,6 +27,7 @@ const pool = new adapter.Pool();
 await applyMigrations(pool);
 console.log('Preview: seeding synthetic sleep, heart, calorie, and SpO2 records. Wait for the ready URL before opening the browser...');
 await seedFixtures(pool, { anchorDate });
+await seedSleepOverviewFixtures(pool, { anchorDate });
 console.log(`Preview: fixtures seeded in ${((Date.now() - startupAt) / 1000).toFixed(1)}s; creating the preview login...`);
 
 const keyring = `1:${crypto.createHash('sha256').update('fixture-preview-journal').digest('base64')}`;
@@ -38,7 +41,7 @@ await journalRepository.create({
 
 const exportService = createExportService({
   pool,
-  datasetService: createAnalysisDatasetService({ pool, journalRepository }),
+  datasetService: createAnalysisDatasetService({ pool, journalRepository, sleepCheckIns: createSleepCheckInRepository(pool, createJournalCipher(keyring)) }),
   storageDirectory: path.resolve('.runtime', 'preview-exports'),
   rowLocks: false,
   pollIntervalMs: 250,

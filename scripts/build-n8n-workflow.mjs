@@ -1,33 +1,13 @@
 import { writeFile } from 'node:fs/promises';
+import { GOOGLE_HEALTH_METRICS } from '../lib/jobs/planner.js';
+import { COMBINATIONS, FILTER_FIELDS } from '../lib/jobs/google-health-request.js';
 
 const workflowPath = new URL('../n8n/health-hub-workflow.json', import.meta.url);
 
 const prepareCode = `const input = $input.first().json.body ?? {};
 const operations = ['profile', 'identity', 'list', 'reconcile', 'rollUp'];
-const metrics = [
-  'oxygen-saturation',
-  'daily-oxygen-saturation',
-  'sleep',
-  'heart-rate',
-  'daily-resting-heart-rate',
-  'total-calories',
-  'active-energy-burned',
-  'basal-energy-burned',
-];
-const combinations = {
-  profile: ['sleep'],
-  identity: ['sleep'],
-  list: [
-    'oxygen-saturation',
-    'daily-oxygen-saturation',
-    'heart-rate',
-    'daily-resting-heart-rate',
-    'active-energy-burned',
-    'basal-energy-burned',
-  ],
-  reconcile: ['sleep'],
-  rollUp: ['total-calories'],
-};
+const metrics = ${JSON.stringify(GOOGLE_HEALTH_METRICS)};
+const combinations = ${JSON.stringify(Object.fromEntries(Object.entries(COMBINATIONS).map(([key,values])=>[key,[...values]])))};
 
 if (
   !operations.includes(input.operation) ||
@@ -57,15 +37,7 @@ const snake = {
   'active-energy-burned': 'active_energy_burned',
   'basal-energy-burned': 'basal_energy_burned',
 };
-const filterField = {
-  'oxygen-saturation': 'oxygen_saturation.sample_time.civil_time',
-  'daily-oxygen-saturation': 'daily_oxygen_saturation.date',
-  sleep: 'sleep.interval.civil_end_time',
-  'heart-rate': 'heart_rate.sample_time.civil_time',
-  'daily-resting-heart-rate': 'daily_resting_heart_rate.date',
-  'active-energy-burned': 'active_energy_burned.interval.civil_start_time',
-  'basal-energy-burned': 'basal_energy_burned.interval.civil_start_time',
-};
+const filterField = ${JSON.stringify(FILTER_FIELDS)};
 
 function requestId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();

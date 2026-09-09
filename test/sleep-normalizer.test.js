@@ -192,6 +192,7 @@ test('returns a stable empty contract for missing data', () => {
   });
 
   assert.deepEqual(result, {
+    sessions: [],
     latest: null,
     nights: [],
     naps: [],

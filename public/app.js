@@ -1,35 +1,33 @@
 import {
-  buildSleepTrendRows,
-  buildSleepLanes,
   civilDateInTimeZone,
   dateRangeForPreset,
   exportPollingNeeded,
   formatDuration,
   heartDetailNotice,
   isLocalDevelopmentHost,
-  scaleSleepTrendRows,
   sleepStageBreakdown,
-  sleepTrendRange,
 } from './health-ui.js';
 import { connectorBannerMessage, renderConnectorStatus, connectorCallbackMessage, syncJobOutcome } from './settings-ui.js';
 import { renderOxygenNight, renderOxygenTrend, renderOxygenCard } from './oxygen-ui.js';
+import { createSleepWorkspace, sleepDuration, recordedTime } from './sleep-workspace.js';
+import { readWorkspaceLocation, workspaceUrl } from './sleep-navigation.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const localDevelopment = isLocalDevelopmentHost(window.location.hostname);
 $('#environmentBanner').hidden = !localDevelopment;
 document.body.classList.toggle('is-local-development', localDevelopment);
-const profileTimezone = 'America/Toronto';
+let profileTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 let today = civilDateInTimeZone(new Date(), profileTimezone);
 const stageNames = { awake: 'Awake', light: 'Light', deep: 'Deep', rem: 'REM' };
 const state = {
   selectedDate: today,
-  activeView: 'today',
+  activeView: 'sleep',
+  sleepSelection: { date: null, sessionId: null, sources: {} },
   ranges: { heart: 'day', calories: 'day', oxygen: 'day' },
   oxygenSelection: {},
   oxygenRequestVersion: 0,
   oxygenData: null,
-  sleepTrendPeriod: '7-days',
   dashboard: null,
   newestMeasurementAt: null,
   journal: [],
@@ -91,7 +89,7 @@ async function fetchJson(url, options = {}) {
   if (!response.ok || payload.ok === false) {
     throw Object.assign(new Error(payload.message || `Request failed with HTTP ${response.status}`), { status: response.status });
   }
-  return payload.data ?? payload;
+  return Object.hasOwn(payload, 'data') ? payload.data : payload;
 }
 
 async function refreshConnector() {
@@ -176,6 +174,7 @@ function renderStageSummary(sleep) {
 }
 
 function renderToday(data, journal) {
+  if (data.timezone) profileTimezone = data.timezone;
   $('#todayOxygen').innerHTML = renderOxygenCard(data.oxygenSaturation);
   state.dashboard = data;
   state.newestMeasurementAt = data.newestMeasurementAt ?? null;
@@ -184,10 +183,12 @@ function renderToday(data, journal) {
   $('#todaySleepEmpty').hidden = Boolean(sleep);
   $('#todaySleepData').hidden = !sleep;
   if (sleep) {
-    $('#sleepDuration').textContent = formatDuration(sleep.durationMinutes);
-    $('#sleepWindow').textContent = `${formatTime(sleep.startTime)}–${formatTime(sleep.endTime)}`;
-    $('#sleepAsleep').textContent = formatDuration(sleep.minutesAsleep);
-    $('#sleepEfficiency').textContent = sleep.efficiency === null ? '—' : `${sleep.efficiency}%`;
+    $('#sleepDuration').textContent = sleepDuration(sleep.minutesAsleep);
+    $('#sleepWindow').textContent = `${recordedTime(sleep.startTime,sleep.startOffsetSeconds,profileTimezone)}–${recordedTime(sleep.endTime,sleep.endOffsetSeconds,profileTimezone)}`;
+    $('#sleepAsleep').textContent = sleepDuration(sleep.durationMinutes);
+    $('#sleepEfficiency').textContent = data.sleepAssessment?.metrics.efficiency.value == null ? '—' : `${Math.round(data.sleepAssessment.metrics.efficiency.value)}%`;
+    $('#todaySleepAssessment').textContent = data.sleepAssessment?.headline ?? '';
+    $('#todaySleepNotes').textContent = data.sleepAssessment?.notes.join(' ') ?? '';
     renderStageSummary(sleep);
   } else {
     $('#sleepDuration').textContent = 'No record';
@@ -242,158 +243,7 @@ async function loadToday() {
   }
 }
 
-function laneMarkup(session) {
-  if (!session.stages?.length) {
-    return '<div class="workspace-empty">This is a classic sleep record. Stage chronology was not available.</div>';
-  }
-  const lanes = buildSleepLanes(session.stages, session.startTime, session.endTime);
-  return `
-    <div class="sleep-lanes" aria-label="Chronological sleep stage timeline">
-      ${['awake', 'rem', 'light', 'deep']
-        .map(
-          (type) => `
-            <div class="sleep-lane">
-              <span class="lane-label"><i data-stage="${type}"></i>${stageNames[type]}</span>
-              <div class="lane-track">
-                ${lanes[type]
-                  .map(
-                    (segment) =>
-                      `<span data-stage="${type}" style="left:${segment.leftPercent}%;width:${Math.max(0.35, segment.widthPercent)}%" title="${stageNames[type]} · ${formatDuration(segment.durationMinutes)}"></span>`,
-                  )
-                  .join('')}
-              </div>
-            </div>`,
-        )
-        .join('')}
-      <div class="lane-axis"><span>${formatTime(session.startTime)}</span><span>${formatTime(session.endTime)}</span></div>
-    </div>`;
-}
-
-function trendBars(rows, valueKey, formatter, stack = false) {
-  if (!rows.length) return '<div class="workspace-empty">No records in this range.</div>';
-  const maximum = Math.max(
-    1,
-    ...rows.map((row) =>
-      stack ? Number(row.activeKcal || 0) + Number(row.basalKcal || 0) : Number(row[valueKey] || 0),
-    ),
-  );
-  return `<div class="trend-bars">${rows
-    .map((row) => {
-      if (stack) {
-        const active = (Number(row.activeKcal || 0) / maximum) * 100;
-        const basal = (Number(row.basalKcal || 0) / maximum) * 100;
-        return `<div class="trend-column" title="${escapeHtml(formatDate(row.date))}: ${escapeHtml(formatter(row.totalKcal))}">
-          <span class="trend-value">${escapeHtml(formatter(row.totalKcal))}</span>
-          <div class="trend-track"><i class="bar-active" style="height:${active}%"></i><i class="bar-basal" style="height:${basal}%"></i></div>
-          <span>${escapeHtml(formatDate(row.date, { short: true }).split(',')[0])}</span>
-        </div>`;
-      }
-      const height = (Number(row[valueKey] || 0) / maximum) * 100;
-      return `<div class="trend-column" title="${escapeHtml(formatDate(row.date))}: ${escapeHtml(formatter(row[valueKey]))}">
-        <span class="trend-value">${escapeHtml(formatter(row[valueKey]))}</span>
-        <div class="trend-track"><i style="height:${Math.max(2, height)}%"></i></div>
-        <span>${escapeHtml(formatDate(row.date, { short: true }).split(',')[0])}</span>
-      </div>`;
-    })
-    .join('')}</div>`;
-}
-
-function sleepTrendMarkup(sessions) {
-  const period = state.sleepTrendPeriod;
-  const scaled = scaleSleepTrendRows(
-    buildSleepTrendRows(sessions, period, state.selectedDate),
-  );
-  const descriptions = {
-    '7-days': 'Seven daily sleep periods',
-    '1-month': 'Four rolling seven-day averages',
-    '1-year': 'Twelve calendar-month averages',
-  };
-  const controls = [
-    ['7-days', '7 days'],
-    ['1-month', '1 month'],
-    ['1-year', '1 year'],
-  ]
-    .map(
-      ([value, label]) =>
-        `<button type="button" data-sleep-trend-period="${value}" class="${period === value ? 'is-active' : ''}" aria-pressed="${period === value}">${label}</button>`,
-    )
-    .join('');
-
-  return `
-    <section class="workspace-panel sleep-trend-panel">
-      <div class="section-title sleep-trend-heading">
-        <div>
-          <h2>Sleep duration trend</h2>
-          <p id="sleepTrendDescription">${descriptions[period]}. The 7h line is your personal target.</p>
-        </div>
-        <div class="range-tabs sleep-trend-tabs" aria-label="Sleep duration trend period">${controls}</div>
-      </div>
-      <div class="sleep-trend" role="list" aria-describedby="sleepTrendDescription">
-        <div class="sleep-trend-scale" aria-hidden="true">
-          <span style="left:${scaled.targetPercent}%">7h target</span>
-        </div>
-        ${scaled.rows
-          .map((row) => {
-            const missing = row.targetState === 'missing';
-            const status = missing
-              ? 'Missing'
-              : row.targetState === 'reached'
-                ? 'Target reached'
-                : 'Below 7h target';
-            const duration = missing ? 'Missing' : formatDuration(row.durationMinutes);
-            return `
-              <div class="sleep-trend-row is-${row.targetState}" role="listitem" aria-label="${escapeHtml(`${row.label}: ${duration}. ${status}.`)}">
-                <span class="sleep-trend-label">${escapeHtml(row.label)}</span>
-                <div class="sleep-trend-rail">
-                  <i style="width:${row.fillPercent}%"></i>
-                  <b class="sleep-target-marker" style="left:${scaled.targetPercent}%" aria-hidden="true"></b>
-                </div>
-                <div class="sleep-trend-value"><strong>${duration}</strong><small>${status}</small></div>
-              </div>`;
-          })
-          .join('')}
-      </div>
-    </section>`;
-}
-
-async function loadSleepWorkspace() {
-  const root = $('#sleepWorkspace');
-  root.innerHTML = '<div class="workspace-loading skeleton"></div>';
-  const range = sleepTrendRange(state.sleepTrendPeriod, state.selectedDate);
-  try {
-    const data = await fetchJson(`/api/metrics/sleep?start=${range.startDate}&end=${range.endDateExclusive}`);
-    const selected = data.sessions.find(({ date }) => date === state.selectedDate);
-    const selectedNight = selected
-      ? (() => {
-          const stages = sleepStageBreakdown(selected.stageSummary, selected.durationMinutes);
-          return `
-            <section class="workspace-summary sleep-workspace-summary">
-              <div class="sleep-period-cell">
-                <div class="sleep-period-heading"><span>Sleep period</span><small>${formatTime(selected.startTime)}–${formatTime(selected.endTime)}</small></div>
-                <strong>${formatDuration(selected.durationMinutes)}</strong>
-              </div>
-              <dl>
-                <div><dt>Asleep</dt><dd>${formatDuration(selected.minutesAsleep)}</dd></div>
-                <div><dt>Awake</dt><dd>${formatDuration(selected.minutesAwake)}</dd></div>
-                <div><dt>Efficiency</dt><dd>${selected.efficiency ?? '—'}%</dd></div>
-                <div><dt>Fell asleep</dt><dd>${formatDuration(selected.timeToSleepMinutes)}</dd></div>
-                <div><dt>Awake episodes</dt><dd>${selected.awakeEpisodes ?? '—'}</dd></div>
-              </dl>
-            </section>
-            <section class="workspace-panel">
-              <div class="section-title"><div><h2>${formatDate(selected.date, { year: true })}</h2><p>Four-lane chronological timeline</p></div><span>${selected.type === 'stages' ? 'Detailed stages' : 'Classic sleep'}</span></div>
-              ${laneMarkup(selected)}
-              <div class="stage-row workspace-stage-row">${stages
-                .map(({ type, duration, percentage }) => `<div class="stage-cell"><span><i data-stage="${type}"></i>${stageNames[type]}</span><strong>${duration}</strong><small>${percentage}%</small></div>`)
-                .join('')}</div>
-            </section>`;
-        })()
-      : '<div class="workspace-empty">No sleep session stored for the selected date.</div>';
-    root.innerHTML = `<button type="button" class="button button-secondary" data-open-oxygen>Blood oxygen for ${escapeHtml(state.selectedDate)} →</button>${selectedNight}${sleepTrendMarkup(data.sessions)}`;
-  } catch (error) {
-    root.innerHTML = `<div class="workspace-empty error-copy">${escapeHtml(error.message)}</div>`;
-  }
-}
+async function loadSleepWorkspace() { await sleepWorkspace.load(state.sleepSelection); }
 
 function rangePlot(points, dayMode) {
   if (!points.length) return '<div class="workspace-empty">No heart readings in this range.</div>';
@@ -614,6 +464,7 @@ async function createExport(event) {
         exportType,
         detailLevel: exportType === 'archive' ? 'full' : 'analysis',
         includeJournal: $('#includeJournal').checked,
+        includeSleepCheckIns: $('#includeSleepCheckIns').checked,
         includePng: exportType === 'png' || $('#includePng').checked,
         metrics: $$('input[name="exportMetric"]:checked').map(input => input.value),
       }),
@@ -666,18 +517,19 @@ async function monitorSync(id, attempts = 0) {
   }
 }
 
-async function setView(view) {
+async function setView(view, { historyMode = 'push' } = {}) {
   if (view !== 'export') {
     clearTimeout(state.exportPoll);
     state.exportPoll = null;
   }
   state.activeView = view;
+  if (view !== 'sleep') sleepWorkspace.cancel();
   if (view !== 'oxygen') state.oxygenRequestVersion++;
   $$('.app-view').forEach((element) => {
     element.hidden = element.dataset.view !== view;
   });
-  $$('.nav-item').forEach((item) => item.classList.toggle('is-active', item.dataset.nav === view));
-  window.history.replaceState({}, '', view === 'today' ? '/' : view === 'settings' ? '/settings' : `/#${view}`);
+  $$('.nav-item').forEach((item) => item.classList.toggle('is-active', item.dataset.nav === view || item.dataset.nav === 'more' && ['heart','oxygen','calories','export','settings'].includes(view)));
+  if (historyMode !== 'none') window.history[historyMode === 'replace' ? 'replaceState' : 'pushState']({}, '', workspaceUrl(view,state.selectedDate,state.sleepSelection));
   window.scrollTo({ top: 0, behavior: 'instant' });
   if (view === 'today') await loadToday();
   if (view === 'sleep') await loadSleepWorkspace();
@@ -786,7 +638,10 @@ $$('[data-nav]').forEach((control) => control.addEventListener('click', (event) 
   setView(control.dataset.nav);
 }));
 $$('[data-open-view]').forEach((panel) => {
-  const open = () => setView(panel.dataset.openView);
+  const open = () => {
+    if (panel.dataset.openView === 'sleep') state.sleepSelection = { ...state.sleepSelection, date: state.selectedDate, sessionId: null };
+    setView(panel.dataset.openView);
+  };
   panel.addEventListener('click', open);
   panel.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -809,35 +664,27 @@ $$('[data-range-tabs]').forEach((group) => {
   });
 });
 
-$('#sleepWorkspace').addEventListener('click', (event) => {
-  if (event.target.closest('[data-open-oxygen]')) { setView('oxygen'); return; }
-  const button = event.target.closest('[data-sleep-trend-period]');
-  if (!button || button.dataset.sleepTrendPeriod === state.sleepTrendPeriod) return;
-  state.sleepTrendPeriod = button.dataset.sleepTrendPeriod;
-  loadSleepWorkspace();
-});
-
 $('#previousDate').addEventListener('click', () => {
   state.selectedDate = shiftDate(state.selectedDate, -1);
   updateDateControls();
-  loadToday();
+  setView('today');
 });
 $('#nextDate').addEventListener('click', () => {
   if (state.selectedDate >= today) return;
   state.selectedDate = shiftDate(state.selectedDate, 1);
   updateDateControls();
-  loadToday();
+  setView('today');
 });
 $('#todayButton').addEventListener('click', () => {
   state.selectedDate = today;
   updateDateControls();
-  loadToday();
+  setView('today');
 });
 $('#datePicker').addEventListener('change', (event) => {
   if (!event.target.value || event.target.value > today) return;
   state.selectedDate = event.target.value;
   updateDateControls();
-  loadToday();
+  setView('today');
 });
 $('#addContextButton').addEventListener('click', () => setView('journal'));
 $('#syncButton').addEventListener('click', syncNow);
@@ -875,16 +722,27 @@ $('#journalList').addEventListener('click', (event) => {
 });
 $('#exportForm').addEventListener('submit', createExport);
 
-updateDateControls();
+const sleepWorkspace = createSleepWorkspace({
+  root: $('#sleepWorkspace'), fetchJson, notify: toast,
+  navigate(selection) { state.sleepSelection = selection; if(selection.date)state.selectedDate=selection.date; setView('sleep'); },
+  onResolved(report) {
+    if(report.timezone)profileTimezone=report.timezone;
+    if(report.date) { state.selectedDate=report.date; state.sleepSelection={...state.sleepSelection,date:report.date,sessionId:report.session?.id??null}; }
+    if(state.activeView==='sleep')window.history.replaceState({},'',workspaceUrl('sleep',state.selectedDate,state.sleepSelection));
+    updateDateControls();
+  },
+});
+function restoreLocation(historyMode='none') {
+  const route=readWorkspaceLocation(window.location);
+  state.sleepSelection=route.sleepSelection;
+  if(route.date)state.selectedDate=route.date;
+  updateDateControls();
+  setView(route.view,{historyMode});
+}
+window.addEventListener('popstate',()=>restoreLocation());
+window.addEventListener('hashchange',()=>{const route=readWorkspaceLocation(window.location);if(route.view!==state.activeView)restoreLocation();});
 const callbackMessage = window.location.pathname === '/settings' ? connectorCallbackMessage(window.location.search) : null;
 if (callbackMessage) toast(callbackMessage);
-const initialView = window.location.pathname === '/settings'
-  ? 'settings'
-  : window.location.hash.slice(1);
-setView(
-  ['sleep', 'heart', 'oxygen', 'calories', 'journal', 'export', 'settings'].includes(initialView)
-    ? initialView
-    : 'today',
-);
+restoreLocation('replace');
 // Background syncs and token expiry must become visible without a page reload.
 setInterval(() => { if (!document.hidden) refreshConnector(); }, 60_000);

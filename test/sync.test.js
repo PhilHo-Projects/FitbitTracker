@@ -180,6 +180,11 @@ test('default sync omits the currently unavailable Google total-calories rollup'
   assert.deepEqual(
     [...new Set(chunks.map(({ metric }) => metric))],
     [
+      'daily-heart-rate-variability',
+      'heart-rate-variability',
+      'daily-respiratory-rate',
+      'respiratory-rate-sleep-summary',
+      'daily-sleep-temperature-derivations',
       'oxygen-saturation',
       'daily-oxygen-saturation',
       'sleep',
@@ -711,7 +716,7 @@ test('sync worker ingests a chunk, finalizes its window, and completes the job',
   assert.deepEqual(samples.rows.map(({ beats_per_minute: bpm }) => Number(bpm)), [71, 73]);
   assert.equal(Number(daily.average_bpm), 72);
   assert.equal(status.recent[0].status, 'completed');
-  assert.equal(gatewayRequests[0].startDate, '2026-07-16');
+  assert.equal(gatewayRequests[0].startDate, '2026-07-15');
   assert.equal(gatewayRequests[0].endDateExclusive, '2026-07-17');
   assert.equal(gatewayRequests[0].timezone, 'America/Toronto');
 

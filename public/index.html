@@ -7,6 +7,7 @@
     <meta name="theme-color" content="#0b0e14" />
     <title>Personal Health Data Hub</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/sleep.css" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23b9dc8c' d='M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z'/></svg>"
@@ -18,7 +19,7 @@
     </div>
     <header class="app-header">
       <div class="header-inner">
-        <a class="brand" href="/" data-nav="today" aria-label="Open Today">
+        <a class="brand" href="/" data-nav="sleep" aria-label="Open Sleep">
           <span class="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none">
               <path d="M12 20.5S4.5 16 4.5 10.2A4.2 4.2 0 0 1 12 7.6a4.2 4.2 0 0 1 7.5 2.6C19.5 16 12 20.5 12 20.5Z" fill="currentColor"/>
@@ -95,8 +96,8 @@
           <section class="metric-panel sleep-summary interactive-panel" data-open-view="sleep" tabindex="0" aria-labelledby="sleepMetricLabel sleepSummaryHeading">
             <div class="panel-heading sleep-panel-heading">
               <dl class="sleep-heading-metrics">
-                <div><dt id="sleepMetricLabel">Sleep</dt><dd id="sleepSummaryHeading"><span id="sleepDuration">—</span></dd></div>
-                <div><dt>Asleep</dt><dd id="sleepAsleep">—</dd></div>
+                <div><dt id="sleepMetricLabel">Actual sleep</dt><dd id="sleepSummaryHeading"><span id="sleepDuration">—</span></dd></div>
+                <div><dt>Recorded period</dt><dd id="sleepAsleep">—</dd></div>
                 <div><dt>Efficiency</dt><dd id="sleepEfficiency">—</dd></div>
               </dl>
               <div class="sleep-heading-meta">
@@ -106,6 +107,8 @@
             </div>
             <div id="todaySleepEmpty" class="metric-empty" hidden>Sync this date to add its sleep record.</div>
             <div id="todaySleepData">
+              <p id="todaySleepAssessment" class="sleep-assessment-title"></p>
+              <p id="todaySleepNotes" class="sleep-data-note"></p>
               <div id="todaySleepBar" class="stage-bar" role="img" aria-label="Sleep stage proportions"></div>
               <div id="todayStageRow" class="stage-row" aria-label="Sleep stage durations and percentages"></div>
             </div>
@@ -158,10 +161,12 @@
       </section>
 
       <section id="view-sleep" class="app-view" data-view="sleep" hidden>
-        <div class="workspace-heading">
-          <div><p class="view-kicker">Sleep workspace</p><h1>Sleep</h1></div>
-        </div>
         <div id="sleepWorkspace" class="workspace-content"></div>
+      </section>
+
+      <section id="view-more" class="app-view" data-view="more" hidden>
+        <div class="workspace-heading"><div><p class="view-kicker">Health Hub</p><h1>More</h1></div></div>
+        <div class="more-workspaces"><button class="button button-secondary" data-nav="heart">Heart</button><button class="button button-secondary" data-nav="oxygen">SpO₂</button><button class="button button-secondary" data-nav="calories">Calories</button><button class="button button-secondary" data-nav="export">Export</button><button class="button button-secondary" data-nav="settings">Settings</button></div>
       </section>
 
       <section id="view-heart" class="app-view" data-view="heart" hidden>
@@ -284,6 +289,7 @@
               </div>
               <p class="oxygen-muted">Raw oxygen uses recorded civil dates. Include the previous date to capture the evening shown in a night view.</p>
               <label class="check-row"><input id="includeJournal" type="checkbox" /><span>Include decrypted journal.md</span></label>
+              <label class="check-row"><input id="includeSleepCheckIns" type="checkbox" /><span>Include decrypted sleep check-ins</span></label>
               <label class="check-row"><input id="includePng" type="checkbox" checked /><span>Include PNG summary in ZIP</span></label>
             </fieldset>
             <button class="button button-primary" type="submit">Create export</button>
@@ -320,6 +326,7 @@
         </section>
       </section>
     </main>
+    <nav class="mobile-nav" aria-label="Mobile workspaces"><button class="nav-item" data-nav="sleep">Sleep</button><button class="nav-item" data-nav="today">Today</button><button class="nav-item" data-nav="journal">Journal</button><button class="nav-item" data-nav="more">More</button></nav>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/app.js"></script>

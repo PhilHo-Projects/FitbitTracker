@@ -9,8 +9,33 @@ Production URL: `https://fitbit.philippeho.dev`
 SpO₂ implementation and release status are documented in [the runbook](docs/spo2-runbook.md).
 The workspace separates Google daily confidence bounds from observed sample statistics, includes
 the previous evening of the selected sleep session, and preserves gaps and source ambiguity.
-Oxygen exports use schema 1.1.0; raw samples use recorded civil dates. Oxygen is retained locally
+Exports use schema 1.2.0; raw samples use recorded civil dates. Oxygen is retained locally
 in PostgreSQL and is not part of the existing R2 v1 archive bundles.
+
+## Sleep Overview v1
+
+Sleep is the default workspace. It opens the latest main session, with actual asleep time,
+an explained assessment, aligned stage/heart/SpO₂/HRV tracks, and 7-day, 30-day, and yearly trends.
+Daily physiology stays associated with its provider date. Naps are separate from main-sleep goals.
+The editable goal defaults to 420 minutes; personal comparisons use the previous 28 calendar days
+and require 14 usable same-source observations per metric. There is no overall score or AI dependency.
+
+`/api/sleep/report` accepts optional `date` and `sessionId`; `/api/sleep/trends` accepts a closed-open
+`start`/`end` range of up to 366 days. `/api/sleep/preferences` supports GET/PUT.
+Encrypted `/api/sleep/check-ins/:date` supports GET/PUT/DELETE; the separate range endpoint
+`/api/sleep/check-ins?start=&end=` provides optional trend ratings. Check-ins use the existing
+journal keyring and are excluded from exports unless `includeSleepCheckIns` is explicitly true.
+Sleep exports include versioned calculations, baseline observations, source JSON, and derivation rules.
+
+Migration `009_sleep_overview.sql` adds PostgreSQL storage for the five sleep physiology streams,
+preferences, and encrypted check-ins. Streams without provider names use stable source/date or
+source/instant identities for corrections. The direct connector and generated n8n gateway share
+the same request allowlist and filters. A bounded read-only probe on 2026-09-09 confirmed that the
+connected Google account returned records for all five streams.
+
+Deployment, migration of the production database, gateway publication, and historical catch-up
+remain explicit release steps. The existing production sync cadence and archive/pruning gates
+are unchanged. `npm run preview` uses synthetic sleep physiology for local UI inspection.
 
 ## Architecture
 

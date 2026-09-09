@@ -23,7 +23,7 @@ test('localhost has a hidden-by-default development banner initialized from its 
   assert.match(css, /\.app-body\.is-local-development \.app-header\s*\{/);
 });
 
-test('Today keeps only Asleep and Efficiency beside the primary sleep duration', async () => {
+test('Today keeps the recorded period and efficiency beside actual sleep', async () => {
   const { html, app } = await sources();
   const todaySleep = html.slice(
     html.indexOf('<section class="metric-panel sleep-summary'),
@@ -49,7 +49,7 @@ test('Today sleep summary aligns equal-size metrics, right-side timing, and a co
   assert.match(todaySleep, /class="sleep-heading-metrics"/);
   assert.match(
     todaySleep,
-    /<dt id="sleepMetricLabel">Sleep<\/dt><dd id="sleepSummaryHeading"><span id="sleepDuration">/,
+    /<dt id="sleepMetricLabel">Actual sleep<\/dt><dd id="sleepSummaryHeading"><span id="sleepDuration">/,
   );
   assert.match(todaySleep, /class="sleep-heading-meta"/);
   assert.match(todaySleep, /id="sleepWindow"/);
@@ -62,30 +62,9 @@ test('Today sleep summary aligns equal-size metrics, right-side timing, and a co
   );
 });
 
-test('Sleep workspace heading removes its description and page-level range controls', async () => {
-  const { html } = await sources();
-  const sleepView = html.slice(
-    html.indexOf('<section id="view-sleep"'),
-    html.indexOf('<section id="view-heart"'),
-  );
 
-  assert.match(sleepView, /<p class="view-kicker">Sleep workspace<\/p><h1>Sleep<\/h1>/);
-  assert.doesNotMatch(sleepView, /Chronology first/);
-  assert.doesNotMatch(sleepView, /data-range-tabs="sleep"/);
-});
 
-test('selected-night summary uses six balanced cells with time beside Sleep period', async () => {
-  const { app } = await sources();
 
-  assert.match(app, /class="workspace-summary sleep-workspace-summary"/);
-  assert.match(app, /class="sleep-period-heading"/);
-  assert.match(app, /<span>Sleep period<\/span><small>\$\{formatTime\(selected\.startTime\)\}–\$\{formatTime\(selected\.endTime\)\}<\/small>/);
-  assert.match(app, /<dt>Asleep<\/dt>/);
-  assert.match(app, /<dt>Awake<\/dt>/);
-  assert.match(app, /<dt>Efficiency<\/dt>/);
-  assert.match(app, /<dt>Fell asleep<\/dt>/);
-  assert.match(app, /<dt>Awake episodes<\/dt>/);
-});
 
 test('Sleep, Heart, and Calories workspace summaries use one shared white-stat size', async () => {
   const { app, css } = await sources();
@@ -109,28 +88,4 @@ test('Sleep, Heart, and Calories workspace summaries use one shared white-stat s
   );
   assert.doesNotMatch(app, /<small>bpm<\/small>/);
   assert.doesNotMatch(app, /<small>kcal burned<\/small>/);
-});
-
-test('Sleep trend defaults to seven days and owns its three local range controls', async () => {
-  const { app } = await sources();
-
-  assert.match(app, /sleepTrendPeriod: '7-days'/);
-  assert.match(app, /\['7-days', '7 days'\]/);
-  assert.match(app, /\['1-month', '1 month'\]/);
-  assert.match(app, /\['1-year', '1 year'\]/);
-  assert.match(app, /data-sleep-trend-period="\$\{value\}"/);
-  assert.doesNotMatch(app, /ranges:\s*\{\s*sleep:/);
-  assert.doesNotMatch(app, /metric === 'sleep'/);
-});
-
-test('Sleep duration trend renders horizontal rows with a seven-hour target marker', async () => {
-  const { app } = await sources();
-
-  assert.match(app, /class="sleep-trend-row is-\$\{row\.targetState\}"/);
-  assert.match(app, /class="sleep-trend-rail"/);
-  assert.match(app, /class="sleep-target-marker"/);
-  assert.match(app, /7h target/);
-  assert.match(app, /Below 7h target/);
-  assert.match(app, /Target reached/);
-  assert.doesNotMatch(app, /trendBars\(\[\.\.\.data\.sessions\]\.reverse\(\), 'durationMinutes'/);
 });

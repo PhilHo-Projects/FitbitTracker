@@ -39,7 +39,7 @@ test('oxygen fetch expands the preceding evening and clamps raw data only', asyn
     gateway: {}, writer: {}, rawRetentionDays: 90, now: () => Date.parse('2026-09-07T12:00:00Z') });
   await service.enqueue({ mode: 'custom', startDate: '2026-09-07', endDateExclusive: '2026-09-08', metrics: ['oxygen-saturation', 'daily-oxygen-saturation', 'heart-rate'] });
   assert.equal(queued.chunks.find(({ metric }) => metric === 'oxygen-saturation').startDate, '2026-09-06');
-  assert.equal(queued.chunks.find(({ metric }) => metric === 'heart-rate').startDate, '2026-09-07');
+  assert.equal(queued.chunks.find(({ metric }) => metric === 'heart-rate').startDate, '2026-09-06');
   assert.equal(queued.chunks.find(({ metric }) => metric === 'daily-oxygen-saturation').startDate, '2026-09-07');
   await service.enqueue({ mode: 'backfill', startDate: '2024-01-01', endDateExclusive: '2026-09-08', metrics: ['oxygen-saturation', 'daily-oxygen-saturation'] });
   assert.equal(queued.chunks.filter(({ metric }) => metric === 'oxygen-saturation').map(({ startDate }) => startDate).sort()[0], '2026-06-10');
@@ -71,14 +71,14 @@ test('oxygen persists pages, follows an empty continuation, and leaves no silent
   await pool.end();
 });
 
-test('terminal oxygen failure preserves successful non-oxygen summaries in either completion order', async () => {
-  for (const metrics of [['sleep', 'oxygen-saturation'], ['oxygen-saturation', 'sleep']]) {
+test('terminal oxygen or HRV failure preserves sleep summaries in either completion order', async () => {
+  for (const metrics of [['sleep', 'oxygen-saturation'], ['oxygen-saturation', 'sleep'], ['sleep', 'heart-rate-variability'], ['heart-rate-variability', 'sleep']]) {
     const pool = await createOxygenDatabase();
     const repository = createSyncRepository(pool, { advisoryLocks: false });
     const recalculated = [];
     const service = createSyncService({ pool, repository,
       gateway: { request: async ({ metric }) => {
-        if (metric === 'oxygen-saturation') throw Object.assign(new Error('private upstream payload'), { transient: false, status: 403 });
+        if (metric !== 'sleep') throw Object.assign(new Error('private upstream payload'), { transient: false, status: 403 });
         return { data: {} };
       } },
       writer: { ...createMetricWriter(pool), recalculateDaily: async (_account, date) => recalculated.push(date) },

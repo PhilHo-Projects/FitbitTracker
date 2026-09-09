@@ -65,7 +65,7 @@ function chart({ segments = [], values = [], start, end, startLabel, endLabel, s
     const label = trend ? `${point.date} · ${percent(point.percentage)}` : sampleLabel(point);
     return `<circle cx="${x(point.time)}" cy="${y(point.percentage)}" r="3" tabindex="0" ${trend ? `role="button" data-oxygen-date="${point.date}"` : ''} data-oxygen-point="${escape(label)}" aria-label="${escape(label)}"><title>${escape(label)}</title></circle>`;
   };
-  const colors = { awake: '#e7b878', rem: '#ae9ee8', light: '#7eaec1', deep: '#456c8b' };
+  const colors = { awake: 'var(--awake)', rem: 'var(--rem)', light: 'var(--light)', deep: 'var(--deep)' };
   return `<svg class="oxygen-chart" viewBox="0 0 900 325" role="img" aria-label="${trend ? 'Daily blood oxygen averages and confidence bounds' : 'Blood oxygen readings and sleep stages'}; axis ${minimum} to 100 percent">
     ${ticks.map(value => `<line x1="64" x2="856" y1="${y(value)}" y2="${y(value)}" class="oxygen-grid"/><text x="52" y="${y(value) + 4}" text-anchor="end">${value}%</text>`).join('')}
     ${segments.map(segment => {
