@@ -4,6 +4,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import pg from 'pg';
 
@@ -102,6 +104,155 @@ function quoteIntegrationSchema(schema) {
 function integrationSchemaToDrop(schema, schemaWasCreated) {
   return schemaWasCreated ? quoteIntegrationSchema(schema) : null;
 }
+
+async function withOptimizationDatabase(run) {
+  const pool = new pg.Pool({ connectionString: integrationUrl });
+  const schema = createIntegrationSchemaName();
+  let created = false;
+  const scoped = {
+    async connect() {
+      const client = await pool.connect();
+      await client.query(`SET search_path TO ${quoteIntegrationSchema(schema)}`);
+      await client.query("SET TIME ZONE 'Pacific/Auckland'");
+      return client;
+    },
+    async query(...args) {
+      const client = await this.connect();
+      try { return await client.query(...args); } finally { client.release(); }
+    },
+  };
+  try {
+    await pool.query(`CREATE SCHEMA ${quoteIntegrationSchema(schema)}`); created = true;
+    await applyMigrations(pool, { schema });
+    const accountId = '41111111-1111-4111-8111-111111111111';
+    await scoped.query("INSERT INTO source_accounts(id,provider,provider_account_id) VALUES($1,'test','optimization')", [accountId]);
+    await run(scoped, accountId, schema);
+  } finally {
+    try { if (created) await pool.query(`DROP SCHEMA ${quoteIntegrationSchema(schema)} CASCADE`); }
+    finally { await pool.end(); }
+  }
+}
+
+test('PostgreSQL chart queries transfer aggregates instead of raw samples to Node', { skip: !integrationUrl }, async () => {
+  await withOptimizationDatabase(async (pool, accountId) => {
+    await pool.query(`INSERT INTO heart_rate_samples(id,source_account_id,provider_key,civil_date,sampled_at,beats_per_minute)
+      SELECT md5(i::text)::uuid,$1,i::text,'2026-09-07',timestamptz '2026-09-07T01:00:00Z'+i*interval '1 second',
+      CASE WHEN i%2=0 THEN 60 ELSE 80 END FROM generate_series(0,599) i`, [accountId]);
+    let transferred = 0;
+    const measuredPool = { ...pool, async query(sql, params) {
+      const result = await pool.query(sql, params);
+      if (sql.includes('FROM heart_rate_samples') && sql.includes('beats_per_minute')) transferred += result.rows.length;
+      return result;
+    } };
+    const report = await createHealthRepository(measuredPool).getHeartRange('2026-09-07', '2026-09-08', 'five-minute');
+    assert.deepEqual(report.points, [
+      { time: '2026-09-07T01:00:00.000Z', averageBpm: 70, minimumBpm: 60, maximumBpm: 80, count: 300 },
+      { time: '2026-09-07T01:05:00.000Z', averageBpm: 70, minimumBpm: 60, maximumBpm: 80, count: 300 },
+    ]);
+    assert.equal(transferred, 2, 'The application should receive two aggregates, not 600 raw rows');
+  });
+});
+
+test('PostgreSQL calorie detail aggregates in SQL and keeps an explicitly measured zero total', { skip: !integrationUrl }, async () => {
+  await withOptimizationDatabase(async (pool, accountId) => {
+    await pool.query(`INSERT INTO calorie_intervals(id,source_account_id,provider_key,civil_date,metric_type,start_time,end_time,kilocalories)
+      SELECT md5(i::text)::uuid,$1,i::text,'2026-09-07',CASE WHEN i%2=0 THEN 'active' ELSE 'basal' END,
+        '2026-09-07T01:00:00Z','2026-09-07T02:00:00Z',1 FROM generate_series(0,599) i`, [accountId]);
+    await pool.query(`INSERT INTO calorie_intervals(id,source_account_id,provider_key,civil_date,metric_type,start_time,end_time,kilocalories)
+      VALUES ($1,$2,'total','2026-09-07','total','2026-09-07T01:00:00Z','2026-09-07T02:00:00Z',0)`, [randomUUID(), accountId]);
+    let transferred = 0;
+    const measuredPool = { ...pool, async query(sql, params) {
+      const result = await pool.query(sql, params);
+      if (sql.includes('FROM calorie_intervals')) transferred += result.rows.length;
+      return result;
+    } };
+    const report = await createHealthRepository(measuredPool).getCaloriesRange('2026-09-07', '2026-09-08', 'hour');
+    assert.deepEqual(report.intervals, [{ time: '2026-09-07T01:00:00.000Z', activeKcal: 300, basalKcal: 300, totalKcal: 0 }]);
+    assert.equal(transferred, 1);
+  });
+});
+
+test('PostgreSQL unchanged ingestion creates no new row versions and corrections still update', { skip: !integrationUrl }, async () => {
+  await withOptimizationDatabase(async (pool, accountId) => {
+    const writer = createMetricWriter(pool);
+    const sample = { providerKey: 'stable', civilDate: '2026-09-07', sampledAt: '2026-09-07T01:00:00Z', beatsPerMinute: 70, sourceFields: { nested: { value: 1 } } };
+    await writer.upsertHeartSamples(accountId, [sample]);
+    const version = async () => (await pool.query('SELECT xmin::text,ctid::text,updated_at FROM heart_rate_samples')).rows[0];
+    const before = await version();
+    await writer.upsertHeartSamples(accountId, [structuredClone(sample)]);
+    assert.deepEqual(await version(), before);
+    await writer.upsertHeartSamples(accountId, [{ ...sample, beatsPerMinute: 80 }]);
+    assert.notEqual((await version()).xmin, before.xmin);
+    assert.equal(Number((await pool.query('SELECT beats_per_minute FROM heart_rate_samples')).rows[0].beats_per_minute), 80);
+  });
+});
+
+test('PostgreSQL high-volume ingestion batches statements, preserves last corrections and rolls back failed pages', { skip: !integrationUrl }, async () => {
+  await withOptimizationDatabase(async (pool, accountId) => {
+    let inserts = 0;
+    let largestStatement = 0;
+    const measured = { ...pool, async connect() {
+      const client = await pool.connect();
+      return { release: () => client.release(), async query(sql, params) {
+        if (sql.includes('INSERT INTO heart_rate_samples')) { inserts += 1; largestStatement = Math.max(largestStatement, params.length); }
+        return client.query(sql, params);
+      } };
+    } };
+    const writer = createMetricWriter(measured);
+    const rows = Array.from({ length: 1201 }, (_, i) => ({ providerKey: `batch-${i}`, civilDate: '2026-09-07',
+      sampledAt: new Date(Date.parse('2026-09-07T01:00:00Z') + i * 1000).toISOString(), beatsPerMinute: 70 }));
+    rows.splice(1, 0, { ...rows[0], beatsPerMinute: 90 });
+    await writer.upsertHeartSamples(accountId, rows);
+    assert.equal(inserts, 3, 'A 1,202-row provider page should use three bounded insert statements');
+    assert.ok(largestStatement <= 5000);
+    assert.equal(Number((await pool.query("SELECT beats_per_minute FROM heart_rate_samples WHERE provider_key='batch-0'")).rows[0].beats_per_minute), 90);
+    assert.equal(Number((await pool.query('SELECT count(*) FROM heart_rate_samples')).rows[0].count), 1201);
+    const invalid = rows.map((row, index) => ({ ...row, providerKey: `invalid-${index}` }));
+    invalid.at(-1).sampledAt = 'not-a-timestamp';
+    await assert.rejects(writer.upsertHeartSamples(accountId, invalid));
+    assert.equal(Number((await pool.query('SELECT count(*) FROM heart_rate_samples')).rows[0].count), 1201);
+  });
+});
+
+test('PostgreSQL compact preflight distinguishes microseconds and detects duplicates across pages before writing', { skip: !integrationUrl }, async () => {
+  await withOptimizationDatabase(async (pool, accountId) => {
+    await pool.query(`INSERT INTO heart_rate_samples(id,source_account_id,provider_key,civil_date,sampled_at,beats_per_minute)
+      VALUES ('42222222-2222-4222-8222-222222222221',$1,'a','2026-09-07','2026-09-07T01:00:00.000123Z',60),
+             ('42222222-2222-4222-8222-222222222222',$1,'b','2026-09-07','2026-09-07T01:00:00.000456Z',80)`, [accountId]);
+    const dry = await runCompactHealthOperation({ pool, mode: 'backfill', batchSize: 1 });
+    assert.deepEqual(dry.sourceRows, { heart: 2, calories: 0 });
+    assert.equal(Number((await pool.query('SELECT count(*) FROM source_streams')).rows[0].count), 0);
+    await pool.query(`INSERT INTO heart_rate_samples(id,source_account_id,provider_key,civil_date,sampled_at,beats_per_minute)
+      VALUES ('42222222-2222-4222-8222-222222222223',$1,'c','2026-09-07','2026-09-07T01:00:00.000123Z',65)`, [accountId]);
+    await assert.rejects(runCompactHealthOperation({ pool, mode: 'backfill', execute: true, batchSize: 1 }), /Duplicate heart semantic identity/);
+    assert.equal(Number((await pool.query('SELECT count(*) FROM source_streams')).rows[0].count), 0);
+    assert.equal(Number((await pool.query('SELECT count(*) FROM heart_rate_samples_compact')).rows[0].count), 0);
+    await pool.query("DELETE FROM heart_rate_samples WHERE provider_key='c'");
+    const executed = await runCompactHealthOperation({ pool, mode: 'backfill', execute: true, batchSize: 2 });
+    assert.equal(executed.validation.valid, true);
+    const timestamps = (await pool.query(`SELECT to_char(sampled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS time,
+      civil_date::text AS date FROM heart_rate_samples_compact ORDER BY sampled_at`)).rows;
+    assert.deepEqual(timestamps, [
+      { time: '2026-09-07T01:00:00.000123Z', date: '2026-09-07' },
+      { time: '2026-09-07T01:00:00.000456Z', date: '2026-09-07' },
+    ]);
+  });
+});
+
+test('PostgreSQL compact dry-run handles 500,000 samples with a 64 MiB Node heap', { skip: !integrationUrl }, async () => {
+  await withOptimizationDatabase(async (pool, accountId, schema) => {
+    await pool.query(`INSERT INTO heart_rate_samples(id,source_account_id,provider_key,civil_date,sampled_at,beats_per_minute)
+      SELECT md5(i::text)::uuid,$1,i::text,
+        ((timestamptz '2026-09-01T00:00:00Z'+i*interval '1 second') AT TIME ZONE 'UTC')::date,
+        timestamptz '2026-09-01T00:00:00Z'+i*interval '1 second',70 FROM generate_series(1,500000) i`, [accountId]);
+    const { stdout } = await promisify(execFile)(process.execPath,
+      ['--max-old-space-size=64', 'test-support/compact-memory-probe.mjs'],
+      { env: { ...process.env, COMPACT_PROBE_SCHEMA: schema }, timeout: 120000, maxBuffer: 256000 });
+    const result = JSON.parse(stdout);
+    assert.equal(result.rows, 500000);
+    assert.equal(Number((await pool.query('SELECT count(*) FROM source_streams')).rows[0].count), 0);
+  });
+});
 
 test('PostgreSQL integration harness uses only a generated isolated schema', () => {
   const schema = createIntegrationSchemaName();

@@ -142,6 +142,23 @@ test('authenticated health APIs expose dashboard and closed-open metric ranges',
   });
 });
 
+test('metric APIs reject unbounded detail, invalid calendar dates and oversized summary ranges', async () => {
+  await withServer(services(), async baseUrl => {
+    const cookie = await login(baseUrl);
+    for (const query of [
+      'heart?start=2026-01-01&end=2026-02-01&resolution=five-minute',
+      'calories?start=2026-01-01&end=2026-02-01&resolution=hour',
+      'heart?start=2020-01-01&end=2026-01-01&resolution=day',
+      'sleep?start=2020-01-01&end=2026-01-01',
+      'heart?start=2026-02-30&end=2026-03-02',
+    ]) {
+      const response = await fetch(`${baseUrl}/api/metrics/${query}`, { headers: { cookie } });
+      assert.equal(response.status, 400, query);
+    }
+    assert.equal((await fetch(`${baseUrl}/api/metrics/heart?start=2026-01-01&end=2026-01-08&resolution=five-minute`, { headers: { cookie } })).status, 200);
+  });
+});
+
 test('mutation routes enforce same-origin requests and journal CRUD remains authenticated', async () => {
   await withServer(services(), async (baseUrl) => {
     const cookie = await login(baseUrl);

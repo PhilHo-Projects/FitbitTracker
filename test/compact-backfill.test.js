@@ -8,13 +8,22 @@ import {
 
 const accountId = '11111111-1111-1111-1111-111111111111';
 
-function legacyPool({ hearts = [], calories = [], validation = { heart: [], calories: [] } } = {}) {
+function legacyPool({ hearts = [], calories = [], duplicateMetrics = [], validation = { heart: [], calories: [] } } = {}) {
   const queries = [];
   return {
     queries,
     async query(sql, params = []) {
       queries.push({ sql, params });
       if (sql.includes('FROM source_accounts')) return { rows: [{ id: accountId }] };
+      if (sql.includes('HAVING COUNT(*) > 1')) {
+        const metric = sql.includes('FROM heart_rate_samples') ? 'heart' : 'calories';
+        return { rows: duplicateMetrics.includes(metric) ? [{ duplicate: 1 }] : [] };
+      }
+      if (sql.includes(') dates ORDER BY civil_date')) {
+        const [, cursor, limit] = params;
+        return { rows: [...new Set([...hearts, ...calories].map(row => row.civil_date))].sort()
+          .filter(date => !cursor || date > cursor).slice(0, limit).map(civil_date => ({ civil_date })) };
+      }
       if (sql.includes('FROM heart_rate_samples') && sql.includes('ORDER BY id')) {
         const [sourceAccountId, cursor, limit] = params;
         assert.equal(sourceAccountId, accountId);
@@ -125,6 +134,7 @@ test('dry-run backfill scans bounded batches without writing or deleting source 
 test('backfill preflight aborts duplicate semantic identities before the first compact write', async () => {
   const duplicateTime = '2026-07-16T12:00:00Z';
   const pool = legacyPool({
+    duplicateMetrics: ['heart'],
     hearts: [
       heart('00000000-0000-0000-0000-000000000001', duplicateTime, 70),
       heart('00000000-0000-0000-0000-000000000002', duplicateTime, 72),

@@ -137,6 +137,24 @@ credentials described above. The Browserslist database warning does not prevent 
 
 ## Data and synchronization
 
+The September 9 data-efficiency changes suppress unchanged provider upserts, including
+metadata comparisons, and batch high-volume streams in groups of at most 500 records.
+Real corrections still update the retained records. Repeated unchanged sleep sessions do not
+rewrite their stages. Heart and calorie detail are aggregated in PostgreSQL before being
+returned to the app; detail queries allow at most seven days, and daily views allow 366 days.
+Full-resolution exports remain available through the separate export pipeline.
+
+Compact backfill checks duplicate semantic identities in PostgreSQL, preserves microsecond
+timestamps and civil dates, and pages both records and affected dates without a growing
+JavaScript identity set. A read-only 500,000-sample regression runs with a 64 MiB Node heap.
+
+These changes reduce ingestion churn and query memory; they do not remove existing raw data
+or bound lifetime disk growth. Compact read/export cutover, permanent nightly statistics,
+preservation of original provider payloads in an expanded archive, and retirement of legacy
+storage remain separate migration work. The existing R2 v1 archive contains normalized
+heart/calorie measurements, not the full provider JSON or the newer physiology streams.
+All production compaction, archive, pruning, cutover, removal, and tuning gates remain unchanged.
+
 The initial schema is in `db/migrations/001_initial.sql`. It stores:
 
 - Source accounts, timezone, profile, and Google Health membership start date.

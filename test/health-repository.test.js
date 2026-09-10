@@ -200,7 +200,8 @@ test('heart ranges expose cold availability and combine permanent daily statisti
     now: () => Date.parse('2026-07-21T12:00:00Z'),
   });
   const aged = await repository.getHeartRange('2026-01-15', '2026-01-17', 'five-minute');
-  const mixed = await repository.getHeartRange('2026-01-15', '2026-07-17', 'five-minute');
+  await assert.rejects(repository.getHeartRange('2026-01-15', '2026-07-17', 'five-minute'), /at most 7 days/);
+  const mixed = await repository.getHeartRange('2026-07-07', '2026-07-14', 'five-minute');
   const recent = await repository.getHeartRange('2026-07-16', '2026-07-17', 'five-minute');
 
   assert.deepEqual(aged.rawAvailability, {
@@ -228,8 +229,8 @@ test('heart ranges expose cold availability and combine permanent daily statisti
   assert.deepEqual(aged.periodSummary.percentilesBpm, { p05: 50, median: 80, p95: 110 });
   assert.equal(mixed.resolution, 'mixed');
   assert.equal(mixed.rawAvailability.requestedRangeFullyRaw, false);
-  assert.equal(mixed.points.length, 384);
-  assert.equal(mixed.days.length, 10);
+  assert.equal(mixed.points.length, 240);
+  assert.equal(mixed.days.length, 5);
   assert.equal(recent.rawAvailability.requestedRangeFullyRaw, true);
   assert.equal(recent.points.length, 48);
 
