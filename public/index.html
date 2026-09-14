@@ -312,9 +312,12 @@
           <dl class="summary-facts">
             <div><dt>Connected since</dt><dd id="connectorConnectedAt">Not connected yet</dd></div>
             <div><dt>Sync path</dt><dd id="connectorMode">Unknown</dd></div>
-            <div><dt>Last successful sync</dt><dd id="connectorLastSync">Never</dd></div>
+            <div><dt>Last successful fetch (any stream)</dt><dd id="connectorLastFetch">Never</dd></div>
+            <div><dt>Newest stored measurement</dt><dd id="connectorNewestMeasurement">Never</dd></div>
+            <div><dt>Last fully successful sync</dt><dd id="connectorLastSync">Never</dd></div>
             <div><dt>Granted scopes</dt><dd id="connectorScopes">No scopes recorded</dd></div>
           </dl>
+          <p id="connectorRecovery" class="metric-empty"></p>
           <p class="metric-empty">
             While the Google app stays in Testing mode, reconnect every 7 days.
             Reconnecting takes about twenty seconds.

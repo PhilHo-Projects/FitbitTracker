@@ -15,6 +15,19 @@ async function createFixtureDatabase() {
   return pool;
 }
 
+test('connection health distinguishes a successful metric fetch from a partially failed job', async () => {
+  const pool = await createFixtureDatabase();
+  await seedFixtures(pool, { anchorDate: '2026-07-16' });
+  const account = (await pool.query('SELECT id FROM source_accounts LIMIT 1')).rows[0].id;
+  const job = 'f5159022-bbc9-49b8-b830-98c7f6c51c74';
+  await pool.query("INSERT INTO sync_jobs(id,source_account_id,job_type,status) VALUES($1,$2,'incremental','completed_with_errors')", [job, account]);
+  await pool.query("INSERT INTO sync_chunks(id,sync_job_id,metric,operation,start_date,end_date_exclusive,status,completed_at) VALUES('0386af8d-e290-47b3-a95e-b8521f65a2ad',$1,'sleep','reconcile','2026-07-15','2026-07-17','completed','2026-07-17T10:00:00Z')", [job]);
+  assert.equal((await createHealthRepository(pool).getConnectionHealth()).lastSuccessfulFetch, '2026-07-17T10:00:00.000Z');
+  await pool.query("UPDATE oxygen_saturation_samples SET sampled_at='2026-07-18T04:00:00Z'");
+  assert.equal((await createHealthRepository(pool).getConnectionHealth()).newestMeasurementAt, '2026-07-18T04:00:00.000Z');
+  await pool.end();
+});
+
 test('deterministic fixtures seed raw and summary data idempotently', async () => {
   const pool = await createFixtureDatabase();
 
@@ -90,6 +103,7 @@ test('dashboard query distinguishes present metrics from missing coverage', asyn
   assert.deepEqual(await repository.getConnectionHealth(), {
     newestMeasurementAt: dashboard.newestMeasurementAt,
     lastSuccessfulSync: dashboard.sync.lastSuccessfulSync,
+    lastSuccessfulFetch: null,
   });
 
   await pool.end();

@@ -1,0 +1,66 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import pg from 'pg';
+import { applyMigrations } from '../lib/db/migrations.js';
+import { createSyncService } from '../lib/jobs/sync-service.js';
+import { createSyncRepository } from '../lib/jobs/sync-repository.js';
+import { createMetricWriter } from '../lib/db/metric-writer.js';
+import { normalizeOxygenSaturationSamples, normalizeDailyOxygenSaturation } from '../lib/metrics/oxygen-normalizer.js';
+import { oxygenPoint, oxygenDailyPoint, oxygenAccountId } from '../test-support/oxygen.js';
+
+test('PostgreSQL concurrently deduplicates recovery and preserves unnamed oxygen corrections', { skip: !process.env.PG_INTEGRATION_URL }, async () => {
+  const url = process.env.PG_INTEGRATION_URL;
+  assert.match(new URL(url).pathname, /test/i, 'Use a disposable test database');
+  const schema = `sleep_recovery_${crypto.randomBytes(8).toString('hex')}`;
+  const admin = new pg.Pool({ connectionString: url });
+  const pool = new pg.Pool({ connectionString: url, options: `-c search_path=${schema}` });
+  try {
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await applyMigrations(pool);
+    await pool.query("INSERT INTO source_accounts(id,provider,provider_account_id,timezone,membership_start_date) VALUES($1,'google-health','fixture','America/Toronto','2026-06-24')", [oxygenAccountId]);
+    const state = { connected: true, recoveryPending: true, connectionGeneration: crypto.randomUUID(), recoveryFrom: '2026-09-01T18:00:00Z' };
+    const pending = await createSyncRepository(pool).enqueue({ sourceAccountId: oxygenAccountId, jobType: 'incremental', requestedBy: 'test',
+      startDate: '2026-09-12', endDateExclusive: '2026-09-14', metrics: ['sleep'], chunks: [{ metric: 'sleep', operation: 'reconcile', startDate: '2026-09-12', endDateExclusive: '2026-09-14' }] });
+    const make = () => createSyncService({ pool, repository: createSyncRepository(pool), writer: createMetricWriter(pool), gateway: {}, rawRetentionDays: 90,
+      connector: { status: async () => state, recoveryScheduled: async () => {} }, now: () => Date.parse('2026-09-13T20:00:00Z') });
+    await assert.rejects(make().recoverConnection(), { code: 'RECOVERY_WAITING_FOR_ACTIVE_JOB' });
+    assert.equal((await pool.query('SELECT status FROM sync_jobs WHERE id=$1', [pending.id])).rows[0].status, 'queued');
+    await pool.query("UPDATE sync_chunks SET status='completed' WHERE sync_job_id=$1", [pending.id]);
+    await pool.query("UPDATE sync_jobs SET status='completed' WHERE id=$1", [pending.id]);
+    const jobs = await Promise.all([make().recoverConnection(), make().recoverConnection(), make().recoverConnection()]);
+    assert.equal(new Set(jobs.map(j => j.id)).size, 1);
+    assert.equal(Number((await pool.query('SELECT count(*) FROM sync_jobs')).rows[0].count), 2);
+    const writer = createMetricWriter(pool);
+    const sample = oxygenPoint({ time: '2026-09-07T03:59:00.123456789Z' }); delete sample.name;
+    await writer.upsertOxygenSaturationSamples(oxygenAccountId, normalizeOxygenSaturationSamples({ dataPoints: [sample] }));
+    sample.oxygenSaturation.percentage = 97.12345;
+    await writer.upsertOxygenSaturationSamples(oxygenAccountId, normalizeOxygenSaturationSamples({ dataPoints: [sample] }));
+    const rows = (await pool.query('SELECT provider_id,sample_time_text,percentage,source_fields FROM oxygen_saturation_samples')).rows;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].provider_id, null);
+    assert.equal(rows[0].sample_time_text, '2026-09-07T03:59:00.123456789Z');
+    assert.equal(Number(rows[0].percentage), 97.12345);
+    assert.deepEqual(rows[0].source_fields, sample);
+    const daily = oxygenDailyPoint(); daily.name = '';
+    await writer.upsertDailyOxygenSaturation(oxygenAccountId, normalizeDailyOxygenSaturation({ dataPoints: [daily] }));
+    daily.dailyOxygenSaturation.averagePercentage = 97.75;
+    await writer.upsertDailyOxygenSaturation(oxygenAccountId, normalizeDailyOxygenSaturation({ dataPoints: [daily] }));
+    const summaries = (await pool.query('SELECT provider_id,average_percentage,source_fields FROM oxygen_saturation_daily_summaries')).rows;
+    assert.equal(summaries.length, 1);
+    assert.equal(summaries[0].provider_id, null);
+    assert.equal(Number(summaries[0].average_percentage), 97.75);
+    assert.deepEqual(summaries[0].source_fields, daily);
+    const databaseNow = (await pool.query('SELECT CURRENT_TIMESTAMP AS now')).rows[0].now;
+    const repository = createSyncRepository(pool, { now: () => new Date(databaseNow).getTime() + 1000 });
+    const chunk = await repository.claimNextChunk('fixture-worker');
+    assert.ok(chunk, 'A queued recovery chunk can be claimed');
+    await repository.failChunk(chunk, Object.assign(new Error('Safe contract error'), { code: 'PROVIDER_CONTRACT_INVALID', status: 200 }), { retryable: false });
+    const failure = (await pool.query('SELECT error_code,http_status FROM sync_chunks WHERE id=$1', [chunk.id])).rows[0];
+    assert.deepEqual(failure, { error_code: 'PROVIDER_CONTRACT_INVALID', http_status: 200 });
+  } finally {
+    await pool.end();
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.end();
+  }
+});

@@ -87,7 +87,7 @@ async function fetchJson(url, options = {}) {
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) {
-    throw Object.assign(new Error(payload.message || `Request failed with HTTP ${response.status}`), { status: response.status });
+    throw Object.assign(new Error(payload.message || `Request failed with HTTP ${response.status}`), { status: response.status, code: payload.code });
   }
   return Object.hasOwn(payload, 'data') ? payload.data : payload;
 }
@@ -104,6 +104,14 @@ async function refreshConnector() {
   const banner = document.getElementById('connectorBanner');
   const message = connectorBannerMessage(data, { newestMeasurementAt: state.newestMeasurementAt });
   banner.textContent = message ?? '';
+  if (data?.configured !== false && data?.connected === false) {
+    const reconnect = document.createElement('button');
+    reconnect.type = 'button';
+    reconnect.className = 'button button-primary';
+    reconnect.textContent = 'Reconnect Google Health';
+    reconnect.addEventListener('click', () => document.getElementById('connectorConnect').click());
+    banner.append(' ', reconnect);
+  }
   banner.hidden = !message;
 }
 
@@ -488,6 +496,7 @@ async function syncNow() {
   } catch (error) {
     toast(error.message);
     setSyncState('stale', 'Sync unavailable');
+    if (error.code === 'GOOGLE_RECONNECT_REQUIRED') await refreshConnector();
   } finally {
     button.disabled = false;
   }
@@ -495,10 +504,17 @@ async function syncNow() {
 
 async function monitorSync(id, attempts = 0) {
   try {
-    const result = syncJobOutcome(await fetchJson('/api/sync/status'), id);
+    const status = await fetchJson('/api/sync/status');
+    if (status.pausedReason === 'GOOGLE_RECONNECT_REQUIRED') {
+      setSyncState('stale', 'Reconnect Google Health');
+      await refreshConnector();
+      return;
+    }
+    const result = syncJobOutcome(status, id);
     if (result !== 'pending') {
       if (state.activeView === 'today') await loadToday();
       else if (state.activeView === 'oxygen') await loadOxygenWorkspace();
+      else if (state.activeView === 'sleep') { await loadSleepWorkspace(); await refreshConnector(); }
       else await refreshConnector();
       if (result === 'failed') {
         setSyncState('stale', 'Sync needs attention');

@@ -164,3 +164,12 @@ test('a disconnected connector surfaces as a permanent failure', async () => {
     (error) => error.transient === false,
   );
 });
+
+test('a rejected access token persists reconnection state without retaining provider text', async () => {
+  let rejected = null;
+  const client = createGoogleHealthClient({ connector: { accessToken: async () => 'fixture-token', authorizationRejected: async token => { rejected = token; } },
+    fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'private upstream body' } }) }) });
+  await assert.rejects(client.request({ operation: 'list', metric: 'heart-rate', startDate: '2026-09-01', endDateExclusive: '2026-09-02' }),
+    error => error.status === 401 && error.disconnected && !error.message.includes('private'));
+  assert.equal(rejected, 'fixture-token');
+});

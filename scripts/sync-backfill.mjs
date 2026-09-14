@@ -4,7 +4,7 @@ import { createPool } from '../lib/db/pool.js';
 import { createSyncRepository } from '../lib/jobs/sync-repository.js';
 import { createSyncService } from '../lib/jobs/sync-service.js';
 import { createMetricWriter } from '../lib/db/metric-writer.js';
-import { buildGatewayFromEnv } from './connector-support.mjs';
+import { buildGoogleHealthRuntime } from './connector-support.mjs';
 import { GOOGLE_HEALTH_METRICS } from '../lib/jobs/planner.js';
 
 function validDate(value) {
@@ -13,7 +13,7 @@ function validDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-export async function runBackfill({ args = process.argv.slice(2), env = process.env, poolFactory = createPool, gatewayFactory = buildGatewayFromEnv, now = () => Date.now() } = {}) {
+export async function runBackfill({ args = process.argv.slice(2), env = process.env, poolFactory = createPool, gatewayFactory = null, now = () => Date.now() } = {}) {
   const [startDate, endDateExclusive, selection] = args;
   const metrics = selection?.startsWith('--metrics=') ? [...new Set(selection.slice(10).split(','))] : undefined;
   if (args.length < 2 || args.length > 3 || !validDate(startDate) || !validDate(endDateExclusive) || startDate >= endDateExclusive
@@ -23,10 +23,12 @@ export async function runBackfill({ args = process.argv.slice(2), env = process.
   const pool = poolFactory(env);
   if (!pool) throw new Error('DATABASE_URL is required');
   try {
-    const gateway = await gatewayFactory(pool, { env });
+    const runtime = gatewayFactory ? { gateway: await gatewayFactory(pool, { env }) } : buildGoogleHealthRuntime(pool, { env });
+    const { gateway } = runtime;
     if (!gateway) throw new Error('No Google Health sync gateway is configured');
     const service = createSyncService({
       pool, repository: createSyncRepository(pool), gateway,
+      connector: runtime.mode === 'direct' ? runtime.connector : null,
       writer: createMetricWriter(pool, { compactWritesEnabled: env.HEALTH_COMPACT_WRITES_ENABLED === 'true' }),
       rawRetentionDays: Number(env.RAW_RETENTION_DAYS) || null, now,
     });

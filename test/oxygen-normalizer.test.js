@@ -5,6 +5,37 @@ import { normalizeOxygenSaturationSamples as samples,
   normalizeDailyOxygenSaturation as daily } from '../lib/metrics/oxygen-normalizer.js';
 import { oxygenInstantNanoseconds, parseOxygenTime } from '../lib/metrics/oxygen-time.js';
 
+test('unnamed oxygen records retain distinct stable source/date or exact-instant identities', () => {
+  for (const [make, normalize] of [[oxygenPoint, samples], [oxygenDailyPoint, daily]]) {
+    const original = make();
+    delete original.name;
+    const first = normalize({ dataPoints: [original] })[0];
+    assert.equal(first.providerId, null);
+    assert.deepEqual(first.sourceFields, original);
+    const emptyName = { ...original, name: '' };
+    assert.equal(normalize({ dataPoints: [emptyName] })[0].providerKey, first.providerKey);
+    const corrected = structuredClone(original);
+    const value = corrected.oxygenSaturation ?? corrected.dailyOxygenSaturation;
+    value[corrected.oxygenSaturation ? 'percentage' : 'averagePercentage'] = 97;
+    assert.equal(normalize({ dataPoints: [corrected] })[0].providerKey, first.providerKey);
+    assert.throws(() => normalize({ dataPoints: [original, corrected] }), { code: 'OXYGEN_CONTRACT_INVALID' });
+    const otherSource = structuredClone(original);
+    otherSource.dataSource.device.displayName = 'Second sensor';
+    assert.notEqual(normalize({ dataPoints: [otherSource] })[0].providerKey, first.providerKey);
+  }
+  const a = oxygenPoint({ time: '2026-09-07T03:59:00.123456780Z' });
+  const b = oxygenPoint({ time: '2026-09-07T03:59:00.123456789Z' });
+  delete a.name; delete b.name;
+  const rows = samples({ dataPoints: [a, b] });
+  assert.equal(rows.length, 2);
+  assert.notEqual(rows[0].providerKey, rows[1].providerKey);
+  const c = oxygenDailyPoint({ date: { year: 2026, month: 9, day: 8 } });
+  delete c.name;
+  const d = oxygenDailyPoint(); delete d.name;
+  assert.equal(daily({ dataPoints: [c, d] }).length, 2);
+  assert.throws(() => samples({ dataPoints: [{ ...a, name: 42 }] }), { code: 'OXYGEN_CONTRACT_INVALID' });
+});
+
 test('explicit civil timestamps must agree with physical time including protobuf midnight defaults', () => {
   const time = { physicalTime: '2026-09-07T04:00:01.123456789Z', utcOffset: '-14400s',
     civilTime: { date: { year: 2026, month: 9, day: 7 }, time: { seconds: 1, nanos: 123456789 } } };
@@ -56,14 +87,14 @@ test('valid zero, 100, empty protobuf responses and continuation pages are prese
 });
 
 test('invalid nonempty oxygen responses fail safely instead of becoming empty success', () => {
-  const nameless = oxygenPoint(); delete nameless.name;
+  const invalidName = { ...oxygenPoint(), name: 42 };
   const invalidCivil = oxygenPoint();
   invalidCivil.oxygenSaturation.sampleTime.civilTime = { year: 2026, month: 9, day: 7 };
   const invalid = [undefined, null, [], { result: [] }, { error: { message: 'PRIVATE' } },
     { dataPoints: {} }, { dataPoints: [], nextPageToken: 8 },
     ...[true, '', null, NaN, Infinity, -1, 101, '96.2'].map(percentage => ({ dataPoints: [oxygenPoint({ percentage })] })),
     ...['', null, 'bad', '86401s'].map(offset => ({ dataPoints: [oxygenPoint({ offset })] })),
-    { dataPoints: [nameless] }, { dataPoints: [oxygenDailyPoint()] }, { dataPoints: [invalidCivil] },
+    { dataPoints: [invalidName] }, { dataPoints: [oxygenDailyPoint()] }, { dataPoints: [invalidCivil] },
   ];
   for (const payload of invalid) {
     assert.throws(() => samples(payload), e => e.code === 'OXYGEN_CONTRACT_INVALID'

@@ -74,10 +74,12 @@ test('fetch status requires an entire page chain and unions adjacent windows wit
   assert.equal(oxygenFetchStatus(rows, range).fetchComplete, true);
   assert.equal(oxygenFetchStatus([rows[0]], range).fetchComplete, false);
   assert.equal(oxygenFetchStatus([chunk('one', '2026-09-01', '2026-09-08', { next_page_token: 'two' })], range).fetchComplete, false);
-  rows.push(chunk('new', '2026-09-01', '2026-09-08', { status: 'failed', created_at: '2026-09-08T12:00:00Z' }));
+  rows.push(chunk('new', '2026-09-01', '2026-09-08', { status: 'failed', created_at: '2026-09-08T12:00:00Z', error_code: 'UPSTREAM_PERMISSION_DENIED', http_status: 403 }));
   const result = oxygenFetchStatus(rows, range);
   assert.equal(result.fetchComplete, true);
   assert.equal(result.lastAttemptStatus, 'failed');
+  assert.equal(result.errorCode, 'UPSTREAM_PERMISSION_DENIED');
+  assert.equal(result.httpStatus, 403);
   assert.ok(result.lastSuccessfulFetchAt);
 });
 

@@ -194,6 +194,7 @@ export function createApp(options = {}) {
         secureCookies: env.NODE_ENV === 'production',
         mode: env.GOOGLE_CONNECTOR_MODE === 'direct' && connector ? 'direct' : 'n8n',
         healthStatus: healthRepository?.getConnectionHealth,
+        afterConnect: syncService?.recoverConnection,
         requireAuth,
       }),
     );
@@ -261,6 +262,7 @@ export function createApp(options = {}) {
     res.status(status).json({
       ok: false,
       message: status >= 500 ? 'The request could not be completed' : error.message,
+      ...(error.code === 'GOOGLE_RECONNECT_REQUIRED' ? { code: error.code } : {}),
     });
   });
 
@@ -284,6 +286,7 @@ if (isDirectRun) {
           pool,
           repository: createSyncRepository(pool),
           gateway,
+          connector: process.env.GOOGLE_CONNECTOR_MODE === 'direct' ? connector : null,
           writer: createMetricWriter(pool, {
             compactWritesEnabled: process.env.HEALTH_COMPACT_WRITES_ENABLED === 'true',
           }),

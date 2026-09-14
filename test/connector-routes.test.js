@@ -8,7 +8,7 @@ import { signState } from '../lib/connectors/google-oauth.js';
 
 const SECRET = 'test-secret-value';
 
-function createServer({ connector, oauth, healthStatus, requireAuth = (_req, _res, next) => next() }) {
+function createServer({ connector, oauth, healthStatus, afterConnect, requireAuth = (_req, _res, next) => next() }) {
   const app = express();
   app.use(express.json());
   app.use(
@@ -17,6 +17,7 @@ function createServer({ connector, oauth, healthStatus, requireAuth = (_req, _re
       connector,
       oauth,
       healthStatus,
+      afterConnect,
       secret: SECRET,
       requireAuth,
     }),
@@ -44,6 +45,18 @@ test('status never leaks a token', async () => {
   assert.equal(body.data.connected, true);
   assert.ok(!JSON.stringify(body).toLowerCase().includes('token'));
   server.close();
+});
+
+test('recovery enqueue failure preserves successful consent and offers a pending recovery state', async (t) => {
+  let connected = false;
+  const server = createServer({ connector: { async connectWithCode() { connected = true; } }, oauth: {},
+    afterConnect: async () => { assert.equal(connected, true); throw new Error('private database detail'); } });
+  t.after(() => server.close());
+  const state = signState(SECRET);
+  const response = await call(server, `/api/connectors/google/callback?code=c&state=${state}`,
+    { headers: { cookie: `google_health_oauth_state=${state}` } });
+  assert.equal(connected, true);
+  assert.equal(response.headers.get('location'), '/settings?connected=1&recovery=pending');
 });
 
 test('status includes stored-data health even before OAuth is configured', async (t) => {

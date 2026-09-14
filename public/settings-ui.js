@@ -38,13 +38,21 @@ export function renderConnectorStatus(document, status) {
           : 'unknown'
       }`
     : status.lastError || 'Not connected';
-  button.textContent = status.connected ? 'Reconnect' : 'Connect Google Health';
+  button.textContent = 'Reconnect Google Health';
   button.disabled = status.configured === false;
   if (status.configured === false) detail.textContent = 'The owned connector is not configured on this server.';
   const mode = document.getElementById('connectorMode');
   if (mode) mode.textContent = status.mode === 'direct' ? 'Owned Google connector' : 'n8n (legacy sync path)';
   const lastSync = document.getElementById('connectorLastSync');
   if (lastSync) lastSync.textContent = status.lastSuccessfulSync ? new Date(status.lastSuccessfulSync).toLocaleString() : 'Never';
+  for (const [id, value] of [['connectorLastFetch', status.lastSuccessfulFetch], ['connectorNewestMeasurement', status.newestMeasurementAt]]) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value ? new Date(value).toLocaleString() : 'Never';
+  }
+  const recovery = document.getElementById('connectorRecovery');
+  if (recovery) recovery.textContent = status.mode !== 'direct' ? 'Sync uses the legacy connector.'
+    : !status.connected ? 'Sync paused until Google is reconnected. Pending work is retained.'
+    : status.recoveryPending ? 'History recovery is pending and will retry automatically.' : 'Scheduled sync is enabled.';
 
   const connectedAt = document.getElementById('connectorConnectedAt');
   if (connectedAt) {
@@ -64,7 +72,9 @@ export function renderConnectorStatus(document, status) {
 
 export function connectorCallbackMessage(search) {
   const params = new URLSearchParams(search);
-  if (params.get('connected') === '1') return 'Google Health connected.';
+  if (params.get('connected') === '1') return params.get('recovery') === 'pending'
+    ? 'Google Health connected. History recovery is pending; the worker will retry automatically.'
+    : 'Google Health connected.';
   if (!params.has('error')) return null;
   if (params.get('error') === 'access_denied') return 'Google consent was declined. You can try connecting again.';
   if (params.get('error') === 'invalid_state') return 'The connection request expired or did not match this browser. Please try again.';

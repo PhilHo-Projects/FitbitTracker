@@ -67,7 +67,7 @@ test('oxygen persists pages, follows an empty continuation, and leaves no silent
   const failed = await service.enqueue({ mode: 'custom', startDate: '2026-09-07', endDateExclusive: '2026-09-08', metrics: ['oxygen-saturation'] });
   await service.runOnce();
   assert.equal(await repository.jobStatus(failed.id), 'completed_with_errors');
-  assert.match((await pool.query('SELECT last_error FROM sync_chunks WHERE sync_job_id = $1', [failed.id])).rows[0].last_error, /invalid oxygen record/);
+  assert.equal((await pool.query('SELECT error_code FROM sync_chunks WHERE sync_job_id = $1', [failed.id])).rows[0].error_code, 'PROVIDER_CONTRACT_INVALID');
   await pool.end();
 });
 

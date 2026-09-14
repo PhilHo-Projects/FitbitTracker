@@ -1,6 +1,28 @@
 # SpO₂ implementation and release runbook
 
-Local implementation is complete in `codex/owned-google-health-connector`, 2026-09-07. The feature commit is titled `feat: add retained SpO2 tracking with sleep context and exports`. Production release and account-specific data availability are pending. This document does not authorize deployment, production backfill, connector-mode changes, or archive gates.
+Production was verified on September 13, 2026 at `87c289e`, with oxygen storage and Sleep Overview v1 deployed through the direct Google connector. The September 14 ingestion/recovery changes are implemented locally and **not yet released**. The owner-approved plan authorizes two manual application releases and historical recovery from the earliest retained sleep date through the current date, after a two-day canary. OAuth consent remains an owner action; connector mode, scopes, weekly reconnection, retention, and storage gates remain unchanged.
+
+## Current recovery checkpoint — September 14, 2026
+
+Google consent expired with `invalid_grant` on September 13. The stored connector remains disconnected. No production code or historical recovery has been applied during this work. Reconnection in Settings is required before inspecting the rejected daily/sample oxygen and respiratory-summary responses. The respiratory parser has deliberately not been changed without that evidence.
+
+Safe aggregate checks on September 13 found:
+
+| Metric | Retained observations / coverage |
+| --- | --- |
+| Main sleep history | 78 distinct dates, June 24–September 12, 2026 |
+| Daily HRV and HRV samples | 10 observed dates, September 3–12 |
+| Daily respiratory rate and sleep temperature | 10 observed dates, September 3–12 |
+| Daily and sampled oxygen | No retained rows; rejected ingestion, not evidence of an empty provider stream |
+| Respiratory sleep summaries | No retained rows; rejected ingestion, not evidence of an empty provider stream |
+
+Migration 010 permits null provider IDs for unnamed oxygen records, adds durable reconnect generation/recovery intent, and adds stream error codes and HTTP status. Names that are present are preserved. Unnamed identity uses metric, source, and provider civil date or exact instant; original payloads, precision, and correction behavior are retained.
+
+Disconnected direct connectors suspend scheduling and claims, retain pending work and historical errors, and return actionable `GOOGLE_RECONNECT_REQUIRED` to manual sync. Recovery is deduplicated by consent generation. If another job is active, the durable intent stays pending while that work resumes; the worker then queues recovery, retrying enqueue failures at most once per minute. A queue failure cannot roll back OAuth consent.
+
+Recovery metrics are sleep, daily resting heart rate, both oxygen streams, and the five sleep physiology streams. Dense streams keep the 90-day cap and previous-evening overlap. Calories are excluded from recovery. The first canary must complete and its per-stream record/fetch evidence must be inspected before the already-approved catch-up from June 24. The first release remains pending; comparisons and reporting are prepared separately for the second release.
+
+The isolated ingestion checkpoint passes all 329 tests (zero failures or skips, 145.6 seconds), with `PG_INTEGRATION_URL` pointed at a disposable PostgreSQL 16 container. Coverage includes real PostgreSQL concurrency/queue retention, unnamed sample and daily corrections, exact timestamps, safe error categories, pagination, and existing atomic rollback cases. The production build, unchanged generated workflow, and staged diff check pass. Live respiratory fixtures, canary coverage, and deployment remain pending owner reconnection; any resulting code changes require the affected checks before release.
 
 ## Implemented behavior
 
@@ -32,7 +54,7 @@ Select `oxygen` in the existing export request or Blood oxygen in the form. New 
 - PNG summaries include an oxygen panel and column, decimal percentages, days measured, and ambiguity labels on a 1600×1000 canvas.
 - `rawCoverage.oxygen` independently reports local count/date bounds and fetched-window evidence, with `coldArchiveSupported: false`. Existing R2 v1 bundles contain no oxygen. Journal remains opt-in.
 
-## Verification and handoff
+## Original implementation verification — September 7, 2026
 
 | Check | Observed result |
 |---|---|
@@ -52,7 +74,7 @@ Acceptance A1–A12 was reviewed inline against the implemented modules and focu
 
 Synthetic browser captures and logs remain under ignored `output/`; they contain no live health data. Start with this runbook and the existing implementation when continuing. Do not regenerate the spec or repeat unchanged local checks. The complete suite predates only the final display refinements covered by the focused checks above.
 
-No real account daily/intraday response has been observed during this implementation. Device support, granted consent, live record cadence, and backup coverage of the new tables must be established during release preparation.
+No real account daily/intraday response was observed during the original September 7 implementation. The current reconnection and recovery checkpoint above supersedes that original release status. Device-specific availability must be established through complete successful fetches.
 
 ## Release sequence after authorization
 
