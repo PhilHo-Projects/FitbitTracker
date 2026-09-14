@@ -8,6 +8,8 @@ import { createSyncRepository } from '../lib/jobs/sync-repository.js';
 import { createMetricWriter } from '../lib/db/metric-writer.js';
 import { normalizeOxygenSaturationSamples, normalizeDailyOxygenSaturation } from '../lib/metrics/oxygen-normalizer.js';
 import { oxygenPoint, oxygenDailyPoint, oxygenAccountId } from '../test-support/oxygen.js';
+import { normalizeSleepVitals } from '../lib/metrics/sleep-vitals.js';
+import { respiratorySummaryPoint } from '../test-support/respiratory-summary.js';
 
 test('PostgreSQL concurrently deduplicates recovery and preserves unnamed oxygen corrections', { skip: !process.env.PG_INTEGRATION_URL }, async () => {
   const url = process.env.PG_INTEGRATION_URL;
@@ -51,6 +53,19 @@ test('PostgreSQL concurrently deduplicates recovery and preserves unnamed oxygen
     assert.equal(summaries[0].provider_id, null);
     assert.equal(Number(summaries[0].average_percentage), 97.75);
     assert.deepEqual(summaries[0].source_fields, daily);
+    const respiratoryMetric = 'respiratory-rate-sleep-summary';
+    const respiratory = [respiratorySummaryPoint(11), respiratorySummaryPoint(12)];
+    await writer.upsertSleepVitals(oxygenAccountId, respiratoryMetric, normalizeSleepVitals(respiratoryMetric, { dataPoints: respiratory }));
+    respiratory[0].respiratoryRateSleepSummary.fullSleepStats.breathsPerMinute = 15;
+    await writer.upsertSleepVitals(oxygenAccountId, respiratoryMetric, normalizeSleepVitals(respiratoryMetric, { dataPoints: [respiratory[0]] }));
+    await writer.upsertSleepVitals(oxygenAccountId, respiratoryMetric, []);
+    const respiratoryRows = (await pool.query('SELECT provider_id,civil_date::text,sample_time_text,breaths_per_minute,source_fields FROM sleep_respiratory_summaries ORDER BY civil_date')).rows;
+    assert.equal(respiratoryRows.length, 2);
+    assert.equal(respiratoryRows[0].provider_id, null);
+    assert.equal(respiratoryRows[0].civil_date, '2026-09-11');
+    assert.equal(respiratoryRows[0].sample_time_text, respiratory[0].respiratoryRateSleepSummary.sampleTime.physicalTime);
+    assert.equal(Number(respiratoryRows[0].breaths_per_minute), 15);
+    assert.deepEqual(respiratoryRows[0].source_fields, respiratory[0]);
     const databaseNow = (await pool.query('SELECT CURRENT_TIMESTAMP AS now')).rows[0].now;
     const repository = createSyncRepository(pool, { now: () => new Date(databaseNow).getTime() + 1000 });
     const chunk = await repository.claimNextChunk('fixture-worker');

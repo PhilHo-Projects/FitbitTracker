@@ -4,7 +4,9 @@ Production was verified on September 13, 2026 at `87c289e`, with oxygen storage 
 
 ## Current recovery checkpoint — September 14, 2026
 
-Google consent expired with `invalid_grant` on September 13. The stored connector remains disconnected. No production code or historical recovery has been applied during this work. Reconnection in Settings is required before inspecting the rejected daily/sample oxygen and respiratory-summary responses. The respiratory parser has deliberately not been changed without that evidence.
+Google consent expired with `invalid_grant` on September 13 and the owner reconnected before the September 14 structural inspection. A bounded September 11–14 (exclusive) read returned HTTP 200 and complete single pages: three unnamed daily oxygen records, 828 unnamed oxygen samples, and three respiratory summaries. Only field shapes, counts, and identity properties were recorded; no personal readings were copied into fixtures or logs.
+
+The respiratory summaries had one shared incomplete resource name, `users/<redacted>/dataTypes/respiratory-rate-sleep-summary/dataPoints/`, despite three distinct sample instants and provider dates. Each record normalized individually; the combined page reproduced `Conflicting sleep vital identity`. The repair treats only this exact collection-path shape as unnamed, deriving identity from metric, source, and exact instant. Valid names and true conflicting duplicate errors remain intact. Full/stage statistics and original civil-time payloads remain retained summaries. A synthetic fixture reproduces the observed structure, and PostgreSQL checks separate dates, correction replacement, and unchanged raw JSON.
 
 Safe aggregate checks on September 13 found:
 
@@ -22,7 +24,9 @@ Disconnected direct connectors suspend scheduling and claims, retain pending wor
 
 Recovery metrics are sleep, daily resting heart rate, both oxygen streams, and the five sleep physiology streams. Dense streams keep the 90-day cap and previous-evening overlap. Calories are excluded from recovery. The first canary must complete and its per-stream record/fetch evidence must be inspected before the already-approved catch-up from June 24. The first release remains pending; comparisons and reporting are prepared separately for the second release.
 
-The isolated ingestion checkpoint passes all 329 tests (zero failures or skips, 145.6 seconds), with `PG_INTEGRATION_URL` pointed at a disposable PostgreSQL 16 container. Coverage includes real PostgreSQL concurrency/queue retention, unnamed sample and daily corrections, exact timestamps, safe error categories, pagination, and existing atomic rollback cases. The production build, unchanged generated workflow, and staged diff check pass. Live respiratory fixtures, canary coverage, and deployment remain pending owner reconnection; any resulting code changes require the affected checks before release.
+The final ingestion release passes all 330 tests (zero failures or skips, 137.8 seconds) with a disposable PostgreSQL 16 database. The observed respiratory regression adds one case and extends the real PostgreSQL test. Production build, unchanged generated workflow, and diff checks pass. Canary coverage and deployment remain the next release steps. The production database has enabled daily and monthly backup schedules targeting R2; no backup or retention settings were changed.
+
+The production resource is `fitbit-health-hub-production` (`i9x2p7l752v0oxm4vp58rylt`) on Hetzner, building `main`. Automatic deployment was disabled on September 14 to enforce the approved two manual releases. Use the authenticated Coolify deployment API and verify the resulting commit and health before enqueueing recovery.
 
 ## Implemented behavior
 

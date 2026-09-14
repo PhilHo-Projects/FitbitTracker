@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { respiratorySummaryPoint } from '../test-support/respiratory-summary.js';
+import { normalizeSleepVitals } from '../lib/metrics/sleep-vitals.js';
 import { newDb } from "pg-mem";
 import { applyMigrations } from "../lib/db/migrations.js";
 import { createMetricWriter } from "../lib/db/metric-writer.js";
@@ -16,6 +18,29 @@ const metrics = [
   "respiratory-rate-sleep-summary",
   "daily-sleep-temperature-derivations",
 ];
+test('observed respiratory collection names use source and exact time without merging summaries', () => {
+  const metric = 'respiratory-rate-sleep-summary';
+  const points = [respiratorySummaryPoint(11), respiratorySummaryPoint(12), respiratorySummaryPoint(13)];
+  const rows = normalizeSleepVitals(metric, { dataPoints: points });
+  assert.equal(rows.length, 3);
+  assert.equal(new Set(rows.map(r => r.providerKey)).size, 3);
+  assert.deepEqual(rows.map(r => r.civilDate), ['2026-09-11', '2026-09-12', '2026-09-13']);
+  assert.ok(rows.every(r => r.providerId === null));
+  assert.deepEqual(rows[0].sourceFields, points[0]);
+  const corrected = structuredClone(points[0]);
+  corrected.respiratoryRateSleepSummary.fullSleepStats.breathsPerMinute = 15;
+  assert.equal(normalizeSleepVitals(metric, { dataPoints: [corrected] })[0].providerKey, rows[0].providerKey);
+  assert.throws(() => normalizeSleepVitals(metric, { dataPoints: [points[0], corrected] }), /Conflicting sleep vital identity/);
+  assert.equal(normalizeSleepVitals(metric, { dataPoints: [points[0], points[0]] }).length, 1);
+  const alternate = respiratorySummaryPoint(11, { dataSource: { platform: 'synthetic-alternate' } });
+  assert.equal(normalizeSleepVitals(metric, { dataPoints: [points[0], alternate] }).length, 2);
+  for (const name of [undefined, '', '   ']) {
+    assert.equal(normalizeSleepVitals(metric, { dataPoints: [respiratorySummaryPoint(11, { name })] })[0].providerKey, rows[0].providerKey);
+  }
+  const named = respiratorySummaryPoint(11, { name: `${points[0].name}valid-id` });
+  assert.equal(normalizeSleepVitals(metric, { dataPoints: [named] })[0].providerId, named.name);
+  assert.throws(() => normalizeSleepVitals(metric, { dataPoints: [named, { ...points[1], name: named.name }] }), /Conflicting sleep vital identity/);
+});
 test("all sleep vital streams are default, windowed, allowlisted list requests", () => {
   for (const metric of metrics) {
     assert.ok(DEFAULT_SYNC_METRICS.includes(metric), metric);

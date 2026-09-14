@@ -1,5 +1,7 @@
 # Hetzner Health Hub Promotion
 
+Current release policy (September 14, 2026): the health hub is deployed on Hetzner as Coolify application `i9x2p7l752v0oxm4vp58rylt`, using `main`. Automatic deployment is disabled; publish reviewed commits and invoke the Coolify deployment API explicitly. See [the current release runbook](spo2-runbook.md). The one-time promotion notes below are historical; the retired AWS host must not be used.
+
 ## Current boundary
 
 As verified on 2026-07-17, `fitbit.philippeho.dev` runs the legacy sleep dashboard from `main` at commit `ec2be2f`. Its Coolify image has no health-hub migration files, no `DATABASE_URL`, and no persistent application mount. It reads recent sleep directly through the legacy `fitness-sync` n8n workflow and does not own a PostgreSQL health archive.
@@ -49,7 +51,7 @@ After the one-time PostgreSQL setup and cutover, ordinary changes use one path:
 2. Run and test it with `npm run dev` against the laptop PostgreSQL volume.
 3. Push the branch and merge it to `main` after review.
 4. Required GitHub CI runs tests, builds assets/workflow output, and builds the Docker image.
-5. A signed GitHub push webhook lets Coolify rebuild the Git-backed application from `main`.
+5. Trigger a manual Coolify release from `main`; pushing alone must not deploy.
 6. Verify `/readyz` and the changed UI or API behavior.
 
 Application code and schema migrations then move through Git. Development and production databases remain separate persistent data stores, as they should.
