@@ -22,6 +22,8 @@ test("sleep APIs require auth, prevent foreign-origin writes, validate dates and
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     assert.equal((await fetch(`${base}/api/sleep/report`)).status, 401);
+    assert.equal((await fetch(`${base}/api/sleep/insights?date=2026-09-08`)).status, 401);
+    assert.equal((await fetch(`${base}/api/sleep/summary?date=2026-09-08`)).status, 401);
     const cookie = await signInCookie(base),
       headers = { cookie, origin: base, "content-type": "application/json" };
     const request = (path, method = "GET", body) =>
@@ -61,6 +63,21 @@ test("sleep APIs require auth, prevent foreign-origin writes, validate dates and
       note: "private context",
     });
     const row = (await pool.query("SELECT * FROM sleep_check_ins")).rows[0];
+    const insightsResponse = await request('insights?date=2026-09-08&days=7');
+    assert.equal(insightsResponse.headers.get('cache-control'), 'no-store');
+    const insights = (await insightsResponse.json()).data;
+    assert.equal(insights.schemaVersion, 'sleep-insights-v1');
+    const summaryResponse = await request('summary?date=2026-09-08&days=7');
+    assert.equal(summaryResponse.headers.get('cache-control'), 'no-store');
+    const summary = (await summaryResponse.json()).data;
+    assert.deepEqual(summary.summary.differences, insights.differences);
+    assert.ok(!JSON.stringify(summary).includes('private context'));
+    assert.ok(!Object.hasOwn(summary.summary, 'checkInComparisons'));
+    const included = (await (await request('summary?date=2026-09-08&days=7&includeSleepCheckIns=true')).json()).data;
+    assert.equal(included.summary.nights.at(-1).checkIn.restfulness, 3);
+    assert.ok(!JSON.stringify(included).includes('private context'));
+    for (const query of ['date=2026-02-30', 'date=2026-09-08&days=8', 'date=2026-09-08&sources=null', 'date=2026-09-08&includeSleepCheckIns=yes'])
+      assert.equal((await request(`summary?${query}`)).status, 400);
     assert.equal(JSON.stringify(row).includes("private context"), false);
     const report = await request("report?date=2026-09-08");
     assert.equal(report.headers.get("cache-control"), "no-store");

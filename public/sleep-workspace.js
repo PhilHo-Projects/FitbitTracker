@@ -1,3 +1,5 @@
+import { createSleepPatterns } from './sleep-insights-ui.js';
+
 const escape = (value) =>
   String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -187,7 +189,7 @@ function timelineMarkup(report) {
       .join("")}</details></section>`;
 }
 function checkInMarkup(date, entry) {
-  return `<form data-sleep-check-in><p class="sleep-meta">Optional · morning of ${escape(date)}. Leave any answer blank.</p><fieldset><legend>How rested do you feel?</legend><div class="sleep-rating-options">${rested.map((text, i) => `<label><input type="radio" name="restfulness" value="${i + 1}" ${entry?.restfulness === i + 1 ? "checked" : ""}/><span>${text}</span></label>`).join("")}</div></fieldset><fieldset><legend>How many awakenings do you remember?</legend><div class="sleep-choice-options">${[0, 1, 2, 3].map((n) => `<label><input type="radio" name="awakenings" value="${n}" ${entry?.awakenings === n ? "checked" : ""}/><span>${n === 3 ? "3+" : n}</span></label>`).join("")}</div></fieldset><fieldset><legend>Anything unusual?</legend><div class="sleep-choice-options">${contexts.map((c) => `<label><input type="checkbox" name="context" value="${c}" ${entry?.context?.includes(c) ? "checked" : ""}/><span>${c}</span></label>`).join("")}</div></fieldset><label class="sleep-note-label">Optional note<textarea name="note" rows="2" maxlength="2000" placeholder="A little context for this night">${escape(entry?.note ?? "")}</textarea></label><div class="sleep-form-actions"><button class="button button-primary" type="submit">${entry ? "Update" : "Save"} check-in</button><button class="button button-secondary" type="button" data-sleep-skip>Skip</button><button class="button button-secondary" type="reset">Clear answers</button>${entry ? '<button class="button button-secondary" type="button" data-sleep-delete>Delete</button>' : ""}</div><p class="sleep-meta">Encrypted with your journal key. Context is recorded without inferring its effects.</p></form>`;
+  return `<form data-sleep-check-in><p class="sleep-meta">Optional · morning of ${escape(date)}. Leave any answer blank.</p><fieldset><legend>How rested do you feel?</legend><div class="sleep-rating-options">${rested.map((text, i) => `<label><input type="radio" name="restfulness" value="${i + 1}" ${entry?.restfulness === i + 1 ? "checked" : ""}/><span>${text}</span></label>`).join("")}</div></fieldset><fieldset><legend>How many awakenings do you remember?</legend><div class="sleep-choice-options">${[0, 1, 2, 3].map((n) => `<label><input type="radio" name="awakenings" value="${n}" ${entry?.awakenings === n ? "checked" : ""}/><span>${n === 3 ? "3+" : n}</span></label>`).join("")}</div></fieldset><fieldset><legend>Anything unusual?</legend><div class="sleep-choice-options">${contexts.map((c) => `<label><input type="checkbox" name="context" value="${c}" ${entry?.context?.includes(c) ? "checked" : ""}/><span>${c}</span></label>`).join("")}<label><input type="checkbox" name="contextNone" ${entry?.contextReviewed && !entry?.context?.length ? "checked" : ""}/><span>None of these factors</span></label></div></fieldset><label class="sleep-note-label">Optional note<textarea name="note" rows="2" maxlength="2000" placeholder="A little context for this night">${escape(entry?.note ?? "")}</textarea></label><div class="sleep-form-actions"><button class="button button-primary" type="submit">${entry ? "Update" : "Save"} check-in</button><button class="button button-secondary" type="button" data-sleep-skip>Skip</button><button class="button button-secondary" type="reset">Clear answers</button>${entry ? '<button class="button button-secondary" type="button" data-sleep-delete>Delete</button>' : ""}</div><p class="sleep-meta">Encrypted with your journal key. Context is recorded without inferring its effects.</p></form>`;
 }
 function reportMarkup(report) {
   const date = report.date,
@@ -197,7 +199,7 @@ function reportMarkup(report) {
     index = dates.indexOf(date);
   const header = `<div class="sleep-heading"><div><p class="view-kicker">Sleep overview</p><h1>${date ? dateLabel(date) : "Your sleep"}</h1><p>Time asleep. What changed. What the data supports.</p></div><div class="sleep-date-controls"><button class="button button-secondary" data-sleep-date="${dates[index + 1] ?? (date ? shift(date, -1) : "")}" ${!date ? "disabled" : ""} aria-label="Previous recorded night">←</button><label><span class="sr-only">Sleep wake date</span><input type="date" data-sleep-calendar value="${date ?? ""}"/></label><button class="button button-secondary" data-sleep-date="${dates[index - 1] ?? (date ? shift(date, 1) : "")}" ${!date || date >= dates[0] ? "disabled" : ""} aria-label="Next recorded night">→</button><button class="button button-secondary" data-sleep-latest>Latest night</button></div></div>`;
   if (!session)
-    return `${header}<section class="sleep-card"><h2>No sleep recorded${date ? " on this date" : ""}</h2><p>Available measurements and saved history will remain intact. Sync can fetch newly processed records.</p></section><section data-sleep-trends class="sleep-card"></section>`;
+    return `${header}<section class="sleep-card"><h2>No sleep recorded${date ? " on this date" : ""}</h2><p>Available measurements and saved history will remain intact. Sync can fetch newly processed records.</p></section><section data-sleep-patterns class="sleep-card"></section><section data-sleep-trends class="sleep-card"></section>`;
   const primary =
     report.mainSessionId === session.id
       ? "Main sleep"
@@ -218,7 +220,7 @@ function reportMarkup(report) {
       "",
     )}<p>Missing measurements are not evidence that all signals are normal. An empty completed fetch does not establish device support.</p></details></div>
     <div class="sleep-overview-grid"><div class="sleep-main-column"><section class="sleep-card sleep-report-card"><p class="view-kicker">${primary} · actual time asleep</p><div class="sleep-primary-number">${sleepDuration(session.minutesAsleep)}</div><div class="sleep-secondary-numbers"><span>${sleepDuration(session.durationMinutes)} recorded period</span><span>${sleepDuration(session.minutesAwake)} awake</span><span>${sleepDuration(report.totalSleep.minutesAsleep)} total including naps</span></div>${report.totalSleep.reason ? `<p class="sleep-data-note">Combined total unavailable: ${escape(report.totalSleep.reason)}.</p>` : ""}${renderSleepAssessment(a)}<div class="sleep-indicators">${a.indicators.map((indicator) => `<a href="#sleep-indicator-${indicator.key}" data-indicator="${indicator.key}"><span>${indicator.label}</span><strong>${indicator.key === "duration" ? (session.isNap ? "Nap" : a.metrics.duration.goalDifferenceMinutes < 0 ? "Below goal" : "Goal met") : indicator.metrics.every((k) => a.metrics[k].assessable) ? (indicator.metrics.some((k) => ["above", "below"].includes(a.metrics[k].baseline.comparison)) ? "Changed" : "In recent range") : indicator.key === "signals" ? "Partial data" : "Building baseline"}</strong></a>`).join("")}</div><details class="sleep-goal"><summary>Sleep goal · ${sleepDuration(report.preferences.goalMinutes)}</summary><form data-sleep-goal><label>Chosen goal in minutes<input name="goalMinutes" type="number" min="60" max="1440" step="1" value="${report.preferences.goalMinutes}" required/></label><button class="button button-secondary" type="submit">Update goal</button></form><p>This preference is separate from your recent sleep baseline.</p></details></section>
-    ${timelineMarkup(report)}<section data-sleep-trends class="sleep-card"></section>
+    ${timelineMarkup(report)}<section data-sleep-patterns class="sleep-card"></section><section data-sleep-trends class="sleep-card"></section>
     <section class="sleep-card"><h2>What supports this assessment?</h2><p class="sleep-meta">Recent range = your previous 28 calendar days, excluding this night. At least 14 usable nights per measurement. Historical comparisons, not clinical reference intervals.</p>${a.indicators.map((i) => `<div id="sleep-indicator-${i.key}" class="sleep-indicator-detail"><h3>${i.label}</h3>${i.metrics.map((key) => evidence(a.metrics[key], key)).join("")}</div>`).join("")}</section></div>
     <aside class="sleep-side-column"><section class="sleep-card"><h2>Morning check-in</h2><div data-sleep-check-in-container>${report.checkInDate ? "Loading your optional check-in…" : "Available when a main sleep is recorded for this wake date."}</div></section><section class="sleep-card"><p class="view-kicker">Provider date · ${date}</p><h2>Supporting measurements</h2><p class="sleep-meta">Daily values are associated with this date, including when you select a nap.</p>${["hrv", "breathing", "temperature", "spo2"].map((key) => `<div class="sleep-supporting-measurement"><span>${a.metrics[key].label}</span><strong>${measurementLabel(a.metrics[key])}</strong></div>`).join("")}<div class="sleep-supporting-measurement"><span>Sleep-onset latency</span><strong>${sleepDuration(session.timeToSleepMinutes)}</strong></div><details><summary>Sources &amp; provider details</summary>${signalSources}<p>Respiratory sleep summaries: ${report.respiratorySummaries.length} records. These are summaries, not continuous breathing traces.</p>${report.respiratorySummaries.map((s) => `<p>${s.providerDate} · ${escape(s.sampledAt)} · ${s.breathsPerMinute ?? "Unavailable"} breaths/min</p>`).join("")}<p>Temperature baselines, quality fields, and complete provider records are retained in exports.</p></details></section></aside></div>`;
 }
@@ -379,6 +381,7 @@ export function createSleepWorkspace({
   onResolved,
   notify,
 }) {
+  const patterns = createSleepPatterns({ root, fetchJson, notify });
   let report = null,
     version = 0,
     trendVersion = 0,
@@ -414,6 +417,7 @@ export function createSleepWorkspace({
     target.innerHTML = trendsMarkup(trendData, period, metric, ratings);
   }
   async function load(next = {}) {
+    patterns.cancel();
     selection = next;
     const token = ++version;
     root.innerHTML =
@@ -450,7 +454,7 @@ export function createSleepWorkspace({
                     "Check-in unavailable. Your sleep measurements are still available.";
               })
           : Promise.resolve();
-      await Promise.all([privateLoad, loadTrends(token)]);
+      await Promise.all([privateLoad, loadTrends(token), patterns.load({ date: report.date, sources: selection.sources })]);
     } catch (error) {
       if (token === version)
         root.innerHTML = `<section class="sleep-card" role="alert"><h2>Sleep report unavailable</h2><p>${escape(error.message)}</p><button class="button button-secondary" data-sleep-latest>Open latest night</button></section>`;
@@ -507,7 +511,7 @@ export function createSleepWorkspace({
         root.querySelector("[data-sleep-check-in-container]").innerHTML =
           checkInMarkup(report.checkInDate, null);
         notify("Check-in deleted.");
-        await loadTrends(version);
+        await Promise.all([loadTrends(version), patterns.refresh()]);
       } catch (error) {
         fail(error);
       }
@@ -515,6 +519,12 @@ export function createSleepWorkspace({
   });
   root.addEventListener("change", (event) => {
     const target = event.target;
+    if (target.name === 'contextNone' && target.checked)
+      for (const input of root.querySelectorAll('input[name="context"]')) input.checked = false;
+    if (target.name === 'context' && target.checked) {
+      const none = root.querySelector('input[name="contextNone"]');
+      if (none) none.checked = false;
+    }
     if (target.hasAttribute("data-sleep-calendar") && target.value)
       navigate({ ...selection, date: target.value, sessionId: null });
     if (target.hasAttribute("data-sleep-session"))
@@ -526,7 +536,7 @@ export function createSleepWorkspace({
       navigate({
         ...selection,
         date: report.date,
-        sessionId: report.session.id,
+        sessionId: report.session?.id ?? null,
         sources,
       });
     }
@@ -581,6 +591,7 @@ export function createSleepWorkspace({
             ? Number(data.get("awakenings"))
             : null,
           context: data.getAll("context"),
+          contextReviewed: data.has('contextNone') || data.getAll('context').length > 0,
           note: data.get("note"),
         };
         const saved = await fetchJson(`/api/sleep/check-ins/${date}`, {
@@ -592,7 +603,7 @@ export function createSleepWorkspace({
         root.querySelector("[data-sleep-check-in-container]").innerHTML =
           checkInMarkup(report.checkInDate, entry);
         notify("Check-in saved.");
-        await loadTrends(version);
+        await Promise.all([loadTrends(version), patterns.refresh()]);
       }
     } catch (error) {
       fail(error);
@@ -604,6 +615,7 @@ export function createSleepWorkspace({
     load,
     cancel() {
       version++;
+      patterns.cancel();
     },
   };
 }

@@ -202,6 +202,22 @@ test(
         { includeSleepCheckIns: true },
       );
       assert.equal(withPrivate.sleepCheckIns[0].note, "private sleep note");
+      assert.equal(withPrivate.schemaVersion, '1.3.0');
+      assert.ok(!JSON.stringify(withPrivate.sleepInsights).includes('private sleep note'));
+      assert.ok(!withPrivate.sleepReportMarkdown.includes('private sleep note'));
+      assert.equal(withPrivate.sleepInsights.nights.at(-1).checkIn.restfulness, 4);
+      let aggregateLoads = 0;
+      const originalQuery = scoped.query.bind(scoped);
+      scoped.query = (...args) => { if (args[0].includes('WITH observations AS')) aggregateLoads++; return originalQuery(...args); };
+      const insights = await service.insights({ date: '2026-11-01', days: 30, checkIns });
+      assert.equal(aggregateLoads, 1, 'One bounded heart aggregate load serves the whole comparison');
+      assert.deepEqual(insights.differences, withPrivate.sleepInsights.differences);
+      assert.equal(insights.nights.at(-1).metrics.bedtime.value, 1410);
+      assert.equal(insights.nights.at(-1).metrics.wakeTime.value, 350);
+      await checkIns.put('2026-11-01', { restfulness: 1, contextReviewed: true, context: [] });
+      assert.equal((await service.insights({ date: '2026-11-01', checkIns })).nights.at(-1).checkIn.restfulness, 1);
+      await checkIns.remove('2026-11-01');
+      assert.equal((await service.insights({ date: '2026-11-01', checkIns })).nights.at(-1).checkIn, null);
     } finally {
       await pool.query(`DROP SCHEMA "${schema}" CASCADE`);
       await pool.end();

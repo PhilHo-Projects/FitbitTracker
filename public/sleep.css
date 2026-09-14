@@ -689,3 +689,24 @@
     bottom: 76px;
   }
 }
+
+/* Period comparisons share the nightly workspace and stay within its grid track. */
+#sleepWorkspace { grid-template-columns: minmax(0, 1fr); }
+.sleep-overview-grid { min-width: 0; }
+.sleep-pattern-controls, .sleep-report-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.sleep-pattern-controls [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+[data-sleep-patterns] { min-width: 0; scroll-margin-top: 110px; }
+[data-sleep-patterns] .sleep-table-scroll { max-height: none; }
+[data-sleep-patterns] table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+[data-sleep-patterns] th, [data-sleep-patterns] td { padding: 12px 9px; text-align: left; vertical-align: top; white-space: normal; border-bottom: 1px solid var(--border); }
+[data-sleep-patterns] th { font-weight: 600; }
+[data-sleep-patterns] small, [data-sleep-patterns] details p { color: var(--muted); }
+[data-sleep-patterns] details { margin-block: 10px; }
+#sleepWorkspace [data-sleep-patterns] td summary { min-height: 0; font-size: .75rem; }
+.sleep-pattern-group { padding-block: 8px; border-bottom: 1px solid var(--border); }
+[data-pattern-fallback] textarea { width: 100%; min-width: 0; margin-block: 10px; font-family: monospace; font-size: .85rem; }
+@media (max-width: 680px) {
+  [data-sleep-patterns] table { min-width: 540px; }
+  [data-sleep-patterns] .sleep-section-heading { display: block; }
+  .sleep-main-column > [data-sleep-patterns] { order: 4; }
+}

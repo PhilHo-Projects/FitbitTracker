@@ -59,7 +59,7 @@ test('analysis datasets keep exact summaries primary and include raw records onl
       false,
     );
 
-    assert.equal(analysis.schemaVersion, '1.2.0');
+    assert.equal(analysis.schemaVersion, '1.3.0');
     assert.equal(analysis.timezone, 'America/Toronto');
     assert.equal(analysis.dailySummaries.length, 2);
     assert.equal(analysis.sleepSessions.length, 2);
@@ -142,15 +142,21 @@ test('background export jobs create inspectable ZIP and PNG artifacts and expire
       'daily-summary.csv',
       'journal.md',
       'manifest.json',
+      'sleep-insights.json',
+      'sleep-report.md',
       'sleep-sessions.csv',
       'sleep-stages.csv',
       'summary.png',
     ]);
     const manifest = JSON.parse(zip.readAsText('manifest.json'));
-    assert.equal(manifest.schemaVersion, '1.2.0');
+    assert.equal(manifest.schemaVersion, '1.3.0');
     assert.equal(manifest.range.endDateExclusive, '2026-07-17');
     assert.equal(manifest.journalIncluded, true);
-    assert.equal(manifest.files.length, 7);
+    assert.equal(manifest.files.length, 9);
+    const portable = JSON.parse(zip.readAsText('sleep-insights.json'));
+    assert.equal(portable.schemaVersion, 'sleep-insights-v1');
+    assert.ok(!Object.hasOwn(portable, 'checkInComparisons'));
+    assert.equal(zip.readAsText('sleep-report.md'), JSON.parse(zip.readAsText('analysis.json')).sleepReportMarkdown);
     assert.equal(manifest.rawCoverage, null);
 
     const archiveJob = await service.create({

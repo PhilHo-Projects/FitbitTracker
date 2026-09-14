@@ -29,7 +29,12 @@ test("check-ins preserve unanswered fields, encrypt context, upsert by date, and
   const row = (await pool.query("SELECT * FROM sleep_check_ins")).rows[0];
   assert.ok(!JSON.stringify(row).includes("bedroom"));
   assert.equal((await repo.get("2026-09-08")).awakenings, null);
+  assert.equal((await repo.get("2026-09-08")).contextReviewed, false);
   await repo.put("2026-09-08", { restfulness: 4, awakenings: 0 });
+  assert.equal((await repo.get("2026-09-08")).contextReviewed, false);
+  await repo.put("2026-09-08", { contextReviewed: true, context: [] });
+  assert.equal((await repo.get("2026-09-08")).contextReviewed, true);
+  await assert.rejects(() => repo.put("2026-09-08", { contextReviewed: 'yes' }), { status: 400 });
   assert.equal((await repo.list("2026-09-01", "2026-10-01")).length, 1);
   await assert.rejects(() => repo.put("2026-02-30", { restfulness: 4 }));
   await assert.rejects(() => repo.put("2026-09-08", { restfulness: 6 }));

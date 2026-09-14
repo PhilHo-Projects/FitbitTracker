@@ -10,6 +10,7 @@ import { normalizeOxygenSaturationSamples, normalizeDailyOxygenSaturation } from
 import { oxygenPoint, oxygenDailyPoint, oxygenAccountId } from '../test-support/oxygen.js';
 import { normalizeSleepVitals } from '../lib/metrics/sleep-vitals.js';
 import { respiratorySummaryPoint } from '../test-support/respiratory-summary.js';
+import { sleepTemperaturePoint } from '../test-support/sleep-temperature.js';
 
 test('PostgreSQL concurrently deduplicates recovery and preserves unnamed oxygen corrections', { skip: !process.env.PG_INTEGRATION_URL }, async () => {
   const url = process.env.PG_INTEGRATION_URL;
@@ -66,6 +67,13 @@ test('PostgreSQL concurrently deduplicates recovery and preserves unnamed oxygen
     assert.equal(respiratoryRows[0].sample_time_text, respiratory[0].respiratoryRateSleepSummary.sampleTime.physicalTime);
     assert.equal(Number(respiratoryRows[0].breaths_per_minute), 15);
     assert.deepEqual(respiratoryRows[0].source_fields, respiratory[0]);
+    const temperature = sleepTemperaturePoint();
+    await writer.upsertSleepVitals(oxygenAccountId, 'daily-sleep-temperature-derivations', normalizeSleepVitals('daily-sleep-temperature-derivations', { dataPoints: [temperature] }));
+    const temperatureRow = (await pool.query('SELECT temperature_celsius,baseline_celsius,relative_stddev_celsius,source_fields FROM sleep_temperature_daily')).rows[0];
+    assert.equal(Number(temperatureRow.temperature_celsius), 33.25);
+    assert.equal(temperatureRow.baseline_celsius, null);
+    assert.equal(temperatureRow.relative_stddev_celsius, null);
+    assert.deepEqual(temperatureRow.source_fields, temperature);
     const databaseNow = (await pool.query('SELECT CURRENT_TIMESTAMP AS now')).rows[0].now;
     const repository = createSyncRepository(pool, { now: () => new Date(databaseNow).getTime() + 1000 });
     const chunk = await repository.claimNextChunk('fixture-worker');

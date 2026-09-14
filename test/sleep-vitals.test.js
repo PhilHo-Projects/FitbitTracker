@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { respiratorySummaryPoint } from '../test-support/respiratory-summary.js';
+import { sleepTemperaturePoint } from '../test-support/sleep-temperature.js';
 import { normalizeSleepVitals } from '../lib/metrics/sleep-vitals.js';
 import { newDb } from "pg-mem";
 import { applyMigrations } from "../lib/db/migrations.js";
@@ -18,6 +19,22 @@ const metrics = [
   "respiratory-rate-sleep-summary",
   "daily-sleep-temperature-derivations",
 ];
+test('observed optional temperature NaN fields stay unknown while valid nightly values survive', () => {
+  const metric = 'daily-sleep-temperature-derivations';
+  const point = sleepTemperaturePoint();
+  const [row] = normalizeSleepVitals(metric, { dataPoints: [point] });
+  assert.equal(row.temperature_celsius, 33.25);
+  assert.equal(row.baseline_celsius, null);
+  assert.equal(row.relative_stddev_celsius, null);
+  assert.deepEqual(row.sourceFields, point);
+  for (const invalid of ['Infinity', '-Infinity', 'invalid', NaN]) {
+    const malformed = sleepTemperaturePoint();
+    malformed.dailySleepTemperatureDerivations.baselineTemperatureCelsius = invalid;
+    assert.throws(() => normalizeSleepVitals(metric, { dataPoints: [malformed] }), /Invalid sleep vital value/);
+  }
+  point.dailySleepTemperatureDerivations.nightlyTemperatureCelsius = 'NaN';
+  assert.throws(() => normalizeSleepVitals(metric, { dataPoints: [point] }), /Invalid sleep vital value/);
+});
 test('observed respiratory collection names use source and exact time without merging summaries', () => {
   const metric = 'respiratory-rate-sleep-summary';
   const points = [respiratorySummaryPoint(11), respiratorySummaryPoint(12), respiratorySummaryPoint(13)];

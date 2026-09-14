@@ -9,7 +9,7 @@ Production URL: `https://fitbit.philippeho.dev`
 SpO₂ implementation and release status are documented in [the runbook](docs/spo2-runbook.md).
 The workspace separates Google daily confidence bounds from observed sample statistics, includes
 the previous evening of the selected sleep session, and preserves gaps and source ambiguity.
-Exports use schema 1.2.0; raw samples use recorded civil dates. Oxygen is retained locally
+The updated exports use schema 1.3.0; raw samples use recorded civil dates. Oxygen is retained locally
 in PostgreSQL and is not part of the existing R2 v1 archive bundles.
 
 ## Sleep Overview v1
@@ -33,9 +33,61 @@ source/instant identities for corrections. The direct connector and generated n8
 the same request allowlist and filters. A bounded read-only probe on 2026-09-09 confirmed that the
 connected Google account returned records for all five streams.
 
-Deployment, migration of the production database, gateway publication, and historical catch-up
-remain explicit release steps. The existing production sync cadence and archive/pruning gates
-are unchanged. `npm run preview` uses synthetic sleep physiology for local UI inspection.
+The ingestion/recovery release `6684350` is live (September 14, 2026), with migration 010 applied
+and the direct Google connector reconnected. Bounded live inspection confirmed unnamed oxygen
+records and incomplete respiratory resource names; synthetic regressions cover their repaired identities.
+The two-day canary and June-to-present recovery are tracked in the release runbook. Comparisons
+and portable reports below are prepared for the second authorized manual release.
+The existing production sync cadence and archive/pruning gates are unchanged.
+`npm run preview` uses synthetic sleep physiology for local UI inspection.
+
+### Patterns and portable reports (pending release)
+
+“Patterns over time” compares 7, 30, or 90 days ending on the selected wake date with the
+immediately preceding equal period. Each metric requires at least 4, 15, or 45 usable nights
+in each period, with matching sources and methods. Schedule consistency is median absolute
+clock-time deviation around a circular median. Naps, provisional records, conflicts, and
+insufficient observations do not become main-sleep findings.
+
+`GET /api/sleep/insights?date=YYYY-MM-DD&days=30&sources={}` returns `sleep-insights-v1`,
+using one bounded history load including baseline context. Check-in comparisons use ratings
+4–5 versus 1–2, with neutral ratings separate; each factor compares recorded presence with
+explicitly reviewed absence. Seven usable nights per group and outcome are required.
+The encrypted `contextReviewed` field defaults to false for old records. Missing check-ins
+remain unknown; “None of these factors” explicitly records absence. Notes are never analyzed.
+
+`GET /api/sleep/summary?date=YYYY-MM-DD&days=30&sources={}&includeSleepCheckIns=false`
+returns `sleep-summary-v1`, the same structured calculations, and Markdown. Both endpoints are
+authenticated and uncached. Copy and download controls make no external AI calls. A selectable
+text fallback handles clipboard denial. Ratings and context tags require opt-in; free-text notes
+and journal content are always excluded from the concise report.
+
+Schema 1.3.0 adds `sleepInsights` and `sleepReportMarkdown` to analysis JSON, plus
+`sleep-insights.json` and `sleep-report.md` in sleep ZIPs. Existing files are preserved, including
+explicitly requested full check-in exports. Exact 7/30/90-day export ranges use that comparison
+window; other legacy export ranges retain their requested records and add a 30-day comparison
+ending on the final requested date. Supporting comparison and baseline context can precede the
+requested export range and is labeled in the report.
+
+Local verification on September 14, 2026: all 337 tests pass, with no skips and real PostgreSQL
+integration tests (134.5 seconds). The production build, unchanged generated workflow, and diff
+checks pass. Browser checks at 375px and 1440px cover the 7/30/90-day controls, explicit context
+absence, check-in save/delete, report privacy, clipboard denial, Markdown download, and missing
+selected nights without page overflow. These are local/synthetic checks, not live data recovery.
+
+### Reconnection recovery
+
+Migration 010 adds durable recovery identity and safe per-stream error codes/HTTP status,
+and permits unnamed SpO₂ records. Original payloads and exact sample timestamps are retained.
+Disconnected direct connectors suspend scheduling and worker claims. Manual sync returns HTTP
+409 with `GOOGLE_RECONNECT_REQUIRED`; pending work and historical failures remain stored.
+
+Reconsent durably records recovery intent alongside the encrypted credentials. Recovery covers
+the seven-day overlap plus the disconnect gap, with the existing 90-day cap for dense streams
+and a preceding-evening overlap. It includes sleep, resting heart rate, both oxygen streams,
+and the five sleep physiology streams; it does not backfill calories. The one-active-job rule
+is preserved: pending work resumes first, then the worker creates one deduplicated recovery job.
+Queue errors leave consent successful and recovery pending for an automatic retry.
 
 ## Architecture
 
@@ -460,7 +512,7 @@ For Coolify:
   Health.
 - Configure private PostgreSQL backups to Cloudflare R2 with 30 daily and 12 monthly restore
   points, then perform an actual restore test.
-- Keep the existing AWS deployment available until the new archive is verified.
+- Production now uses the existing Hetzner/Coolify resource. The old AWS host is retired.
 
 ## Project layout
 
