@@ -24,15 +24,37 @@ Disconnected direct connectors suspend scheduling and claims, retain pending wor
 
 Recovery metrics are sleep, daily resting heart rate, both oxygen streams, and the five sleep physiology streams. Dense streams keep the 90-day cap and previous-evening overlap. Calories are excluded from recovery. Canary `bdc6bdd1-db22-460c-bd12-701771c5f18d` completed all nine streams for September 12–14 exclusive, with sampled streams beginning September 11. Every stream has complete successful fetch coverage and retained observations. Independent provider rereads matched all 828 oxygen sample payloads, two daily oxygen payloads, and three respiratory summary payloads exactly; the nightly report loaded successfully. Only aggregate verification results were emitted.
 
-After the canary passed, historical recovery `d48c7fcf-7ce6-4bf3-96fd-607f25530d65` was enqueued for June 24–September 15 exclusive (through September 14). Comparisons and reporting are prepared separately for the second release.
+After the canary passed, historical recovery `d48c7fcf-7ce6-4bf3-96fd-607f25530d65` ran for June 24–September 15 exclusive (through September 14). Comparisons and reporting followed in the second release.
 
-The historical run completed eight streams, including all seven sleep pages, 12 oxygen-sample pages, and six pages each for HRV samples and respiratory summaries. Temperature alone failed with the safe category `PROVIDER_CONTRACT_INVALID` and HTTP 200. Bounded inspection found 75 records, including two with literal `"NaN"` in the optional baseline and relative-standard-deviation fields. [Google identifies both fields as optional](https://developers.google.com/health/reference/rest/v4/users.dataTypes.dataPoints#DailySleepTemperatureDerivations); [ProtoJSON permits a literal NaN representation](https://protobuf.dev/programming-guides/json/). The second release adds a narrow normalization fix: these two optional fields become SQL NULL, the nightly temperature remains strictly validated, and raw JSON retains the original sentinel. A read-only validation of the fix accepted all 75 provider records, with two unavailable baselines. The original failed chunk remains in history; a temperature-only retry follows the second release.
+The historical run completed eight streams, including all seven sleep pages, 12 oxygen-sample pages, and six pages each for HRV samples and respiratory summaries. Temperature alone failed with the safe category `PROVIDER_CONTRACT_INVALID` and HTTP 200. Bounded inspection found 75 records, including two with literal `"NaN"` in the optional baseline and relative-standard-deviation fields. [Google identifies both fields as optional](https://developers.google.com/health/reference/rest/v4/users.dataTypes.dataPoints#DailySleepTemperatureDerivations); [ProtoJSON permits a literal NaN representation](https://protobuf.dev/programming-guides/json/). The second release adds a narrow normalization fix: these two optional fields become SQL NULL, the nightly temperature remains strictly validated, and raw JSON retains the original sentinel. Temperature-only retry `e7080672-7438-42a0-b9ad-667aad3e5df4` completed after the second release and after an existing user-triggered recent sync finished. All 75 retained payloads match an independent provider reread exactly, with two unavailable baselines. The original failed chunk remains in history; current temperature availability is successful and complete.
+
+### Verified recovery coverage — September 14, 2026
+
+Every recovery stream has complete successful fetch coverage for June 24–September 15 exclusive; sampled streams include the preceding civil day. Counts below are retained records and distinct observation dates, not a claim of uninterrupted physiological measurement. There were no entirely empty provider streams in this recovery. Missing dates remain missing.
+
+| Stream | Records | Observed dates | First / last observation date |
+| --- | ---: | ---: | --- |
+| Sleep (including naps) | 82 | 80 | June 24 / September 14 |
+| Daily resting heart rate | 83 | 83 | June 24 / September 14 |
+| Daily oxygen | 70 | 70 | June 25 / September 13 |
+| Oxygen samples | 17,281 | 82 | June 24 / September 14 |
+| Daily HRV | 75 | 75 | June 24 / September 14 |
+| HRV samples | 5,403 | 75 | June 24 / September 14 |
+| Daily respiratory rate | 75 | 75 | June 24 / September 14 |
+| Respiratory sleep summaries | 99 | 75 | June 24 / September 14 |
+| Sleep temperature | 75 | 75 | June 24 / September 14 |
+
+Calories were excluded from the historical recovery. The existing recent sync remains independent. Retention stays at 90 days for dense fetches, and compact-write, archive-execution, pruning, read-cutover, removal, and PostgreSQL tuning gates were not enabled.
 
 The final ingestion release passes all 330 tests (zero failures or skips, 137.8 seconds) with a disposable PostgreSQL 16 database. The observed respiratory regression adds one case and extends the real PostgreSQL test. Production build, unchanged generated workflow, and diff checks pass. The production database has enabled daily and monthly backup schedules targeting R2; no backup or retention settings were changed.
 
 The production resource is `fitbit-health-hub-production` (`i9x2p7l752v0oxm4vp58rylt`) on Hetzner, building `main`. Automatic deployment was disabled on September 14 to enforce the approved two manual releases. Use the authenticated Coolify deployment API and verify the resulting commit and health before enqueueing recovery.
 
-The second release verification passes 337 tests, zero failures or skips (134.5 seconds), including real PostgreSQL and the optional temperature baseline regression. Production build, unchanged generated workflow, and diff checks pass. Synthetic browser checks at 375px and 1440px cover period selection, context absence, editing/deletion, clipboard denial, Markdown download, privacy defaults, and a missing selected night. New sleep export files are additive under schema 1.3.0. Live agreement and final temperature coverage are verified after release.
+The second release `69dd384` is live; Coolify deployment `nirt4chghraqbsik214z2scf` finished and public readiness returns HTTP 200. Verification passes 337 tests, zero failures or skips (134.5 seconds), including real PostgreSQL and the optional temperature baseline regression. Production build, unchanged generated workflow, and diff checks pass. Synthetic browser checks at 375px and 1440px cover period selection, context absence, editing/deletion, clipboard denial, Markdown download, privacy defaults, and a missing selected night. New sleep export files are additive under schema 1.3.0.
+
+Authenticated live API checks cover 7/30/90-day windows: dashboard and report period summaries/differences agree, concise reports omit check-ins by default, and every successful response is uncached. Unauthenticated calls return 401. The 30-day export dataset and Markdown match the API report exactly. Credentials and personal readings stayed on the application host; only booleans and aggregate counts were emitted. The 90-day comparison correctly reports insufficient prior history.
+
+After temperature recovery, the affected 30-day API/report/export agreement was checked again successfully: 26 recorded main-sleep nights in the selected period and ten comparable dimensions for the September 13 wake-date selection. The final Coolify state is healthy with automatic deployment disabled. The disposable PostgreSQL container/tunnel and synthetic browser/preview were removed after verification. Both application releases are complete; subsequent documentation-only commits do not require redeployment.
 
 ## Implemented behavior
 
@@ -55,7 +77,7 @@ The second release verification passes 337 tests, zero failures or skips (134.5 
 
 ## Exports
 
-Select `oxygen` in the existing export request or Blood oxygen in the form. New outputs use schema `1.1.0`.
+Select `oxygen` in the existing export request or Blood oxygen in the form. Current outputs use schema `1.3.0`, preserving the oxygen files introduced in `1.1.0` and adding comparison JSON and Markdown when sleep is selected.
 
 - `oxygen-saturation-daily.csv` retains every provider daily record, metadata, source fields, confidence bounds, and historical deviation.
 - `analysis.json` contains structured daily analysis and oxygen availability. Raw rows in a full ZIP are streamed into `oxygen-saturation-samples.csv`, preserving all sources, duplicates, conflicts, original timestamp text, and source JSON.
@@ -86,7 +108,9 @@ Synthetic browser captures and logs remain under ignored `output/`; they contain
 
 No real account daily/intraday response was observed during the original September 7 implementation. The current reconnection and recovery checkpoint above supersedes that original release status. Device-specific availability must be established through complete successful fetches.
 
-## Release sequence after authorization
+## Original oxygen rollout procedure (historical)
+
+The September 14 release and approved nine-stream recovery above supersede this original oxygen-only rollout sequence. The larger historical recovery is already authorized for this task.
 
 1. Identify the actual FitbitTracker Coolify resource and deployed revision on Hetzner; inspect connector mode, pending jobs, database backup coverage, and restore procedure. Do not infer a resource UUID from another app or old promotion notes.
 2. Obtain safe structural evidence for both Google endpoints through the existing connector. Use a recent date with sleep, include the preceding day for samples, and follow all pages. Keep credentials and personal readings out of logs and Git. Record HTTP class, field names, counts, source-group counts, and whether confidence fields exist. If the response differs, update fixtures/normalizers and run affected tests before ingestion. A valid empty response is not proof of intraday support.

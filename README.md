@@ -33,15 +33,19 @@ source/instant identities for corrections. The direct connector and generated n8
 the same request allowlist and filters. A bounded read-only probe on 2026-09-09 confirmed that the
 connected Google account returned records for all five streams.
 
-The ingestion/recovery release `6684350` is live (September 14, 2026), with migration 010 applied
-and the direct Google connector reconnected. Bounded live inspection confirmed unnamed oxygen
-records and incomplete respiratory resource names; synthetic regressions cover their repaired identities.
-The two-day canary and June-to-present recovery are tracked in the release runbook. Comparisons
-and portable reports below are prepared for the second authorized manual release.
+The two authorized manual releases are live: ingestion/recovery `6684350`, followed by comparisons
+and reports `69dd384` (September 14, 2026). Migration 010 is applied and Google is connected.
+Bounded live inspection confirmed unnamed oxygen records, incomplete respiratory names, and
+unavailable optional temperature baselines; synthetic regressions cover all three representations.
+The two-day canary passed, and all nine recovery streams have complete fetch coverage from June 24
+through September 14, including the successful temperature-only retry. Retained records cover 80
+sleep dates, 70 daily oxygen dates, and 75 dates for HRV, breathing, and temperature; missing dates
+remain explicit. Full coverage evidence is in the release runbook. Coolify automatic deployment
+is disabled; pushes require a manual release.
 The existing production sync cadence and archive/pruning gates are unchanged.
 `npm run preview` uses synthetic sleep physiology for local UI inspection.
 
-### Patterns and portable reports (pending release)
+### Patterns and portable reports
 
 “Patterns over time” compares 7, 30, or 90 days ending on the selected wake date with the
 immediately preceding equal period. Each metric requires at least 4, 15, or 45 usable nights
@@ -73,7 +77,8 @@ Local verification on September 14, 2026: all 337 tests pass, with no skips and 
 integration tests (134.5 seconds). The production build, unchanged generated workflow, and diff
 checks pass. Browser checks at 375px and 1440px cover the 7/30/90-day controls, explicit context
 absence, check-in save/delete, report privacy, clipboard denial, Markdown download, and missing
-selected nights without page overflow. These are local/synthetic checks, not live data recovery.
+selected nights without page overflow. Authenticated live 7/30/90-day APIs agree with their reports,
+the 30-day export matches the report exactly, and privacy defaults/no-store/auth denial pass.
 
 ### Reconnection recovery
 
@@ -96,7 +101,7 @@ Browser
   → Better Auth session (email and password)
   → PostgreSQL health archive
   → resumable sync worker
-  → Header-Auth n8n gateway
+  → direct Google OAuth connector (production)
   → Google Health API
 
 PostgreSQL
