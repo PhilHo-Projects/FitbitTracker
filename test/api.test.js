@@ -62,6 +62,14 @@ function services() {
       enqueue: async () => ({ id: 'sync-1', status: 'queued' }),
       status: async () => ({ active: [], recent: [] }),
     },
+    operationsService: {
+      status: async () => ({
+        state: 'warning',
+        thresholds: { warningPercent: 80, criticalPercent: 90 },
+        current: { civilDate: '2026-07-16', filesystemUsedPercent: 81 },
+        history: [],
+      }),
+    },
     exportService: {
       create: async (input) => {
         const job = { id: 'export-1', status: 'queued', ...input };
@@ -139,6 +147,20 @@ test('authenticated health APIs expose dashboard and closed-open metric ranges',
     assert.equal((await archiveStatusResponse.json()).data.configured, true);
     assert.match(dashboardResponse.headers.get('content-security-policy'), /default-src 'self'/);
     assert.equal(dashboardResponse.headers.get('cache-control'), 'no-store');
+  });
+});
+
+test('operations status is authenticated, uncached, and exposes safe aggregates', async () => {
+  await withServer(services(), async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/operations/status`)).status, 401);
+    const cookie = await login(baseUrl);
+    const response = await fetch(`${baseUrl}/api/operations/status`, { headers: { cookie } });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(payload.data.state, 'warning');
+    assert.equal(payload.data.current.filesystemUsedPercent, 81);
+    assert.equal(JSON.stringify(payload).includes('object_key'), false);
   });
 });
 

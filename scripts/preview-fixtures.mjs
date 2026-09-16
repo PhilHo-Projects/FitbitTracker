@@ -15,6 +15,7 @@ import { seedSleepOverviewFixtures } from '../lib/db/sleep-fixtures.js';
 import { createApp } from '../server.js';
 import { createAuth } from '../lib/auth.js';
 import { civilDateInTimeZone } from '../public/health-ui.js';
+import { createOperationsService } from '../lib/operations/service.js';
 
 const port = Number(process.env.PORT || 4173);
 const anchorDate = process.env.FIXTURE_DATE || civilDateInTimeZone(new Date(), 'America/Toronto');
@@ -61,6 +62,13 @@ const syncService = {
     return { active: [], recent: [] };
   },
 };
+const operationsService = createOperationsService({
+  pool,
+  now: () => Date.parse(`${anchorDate}T18:00:00.000Z`),
+  databaseStats: async () => ({ databaseBytes: 3_000_000_000, heartBytes: 2_500_000_000, oxygenBytes: 25_000_000 }),
+  statfs: async () => ({ blocks: 100n, bavail: 64n, bsize: 1024n ** 3n }),
+});
+await operationsService.capture();
 await createAuth({ pool, env, allowSignUp: true }).api.signUpEmail({
   body: { email: 'preview@example.test', password: 'fixture-password-0000', name: 'Synthetic preview' },
 });
@@ -70,6 +78,7 @@ const app = createApp({
   healthRepository: createHealthRepository(pool),
   journalRepository,
   syncService,
+  operationsService,
   exportService,
   readinessCheck: async () => true,
   now: () => Date.parse(`${anchorDate}T18:00:00.000Z`),

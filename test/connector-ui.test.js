@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { connectorBannerMessage, renderConnectorStatus, connectorCallbackMessage, syncJobOutcome } from '../public/settings-ui.js';
+import {
+  connectorBannerMessage,
+  renderConnectorStatus,
+  connectorCallbackMessage,
+  syncJobOutcome,
+  syncPresentation,
+  syncRetryDelay,
+} from '../public/settings-ui.js';
 
 const NOW = Date.parse('2026-09-04T17:00:00Z');
 
@@ -39,6 +46,33 @@ test('sync monitoring waits for completion, including completed-with-errors', ()
   assert.equal(syncJobOutcome({ recent: [{ id: 'a', status: 'completed' }] }, 'a'), 'completed');
   assert.equal(syncJobOutcome({ recent: [{ id: 'a', status: 'completed_with_errors' }] }, 'a'), 'failed');
   assert.equal(syncJobOutcome({ recent: [] }, 'a'), 'pending');
+});
+
+test('sync presentation adopts active work and reports aggregate stream progress', () => {
+  const status = {
+    active: [{
+      id: 'active-1', status: 'running', metricsStatus: [
+        { metric: 'sleep', status: 'completed', completedChunks: 2, totalChunks: 2 },
+        { metric: 'heart-rate', status: 'pending', completedChunks: 1, totalChunks: 4 },
+      ],
+    }],
+    recent: [],
+  };
+  assert.deepEqual(syncPresentation(status), {
+    jobId: 'active-1', active: true, phase: 'running', completedChunks: 3, totalChunks: 6,
+    label: 'Syncing heart rate · 3/6 steps',
+  });
+  assert.equal(syncPresentation({ ...status, pausedReason: 'GOOGLE_RECONNECT_REQUIRED' }).phase, 'disconnected');
+});
+
+test('sync presentation distinguishes terminal outcomes and polling backoff is bounded', () => {
+  const completed = { active: [], recent: [{ id: 'done', status: 'completed', metricsStatus: [] }] };
+  const partial = { active: [], recent: [{ id: 'partial', status: 'completed_with_errors', metricsStatus: [] }] };
+  assert.equal(syncPresentation(completed, 'done').phase, 'completed');
+  assert.equal(syncPresentation(partial, 'partial').phase, 'failed');
+  assert.equal(syncRetryDelay(0), 5000);
+  assert.equal(syncRetryDelay(2), 20000);
+  assert.equal(syncRetryDelay(99), 60000);
 });
 
 test('no banner when connected and data is fresh', () => {

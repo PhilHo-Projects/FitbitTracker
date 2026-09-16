@@ -87,3 +87,43 @@ export function syncJobOutcome(status, id) {
   if (['failed', 'completed_with_errors'].includes(job?.status)) return 'failed';
   return 'pending';
 }
+
+const metricLabels = {
+  sleep: 'sleep',
+  'heart-rate': 'heart rate',
+  'daily-resting-heart-rate': 'resting heart rate',
+  'active-energy-burned': 'active energy',
+  'basal-energy-burned': 'basal energy',
+  'oxygen-saturation': 'blood oxygen',
+  'daily-oxygen-saturation': 'daily blood oxygen',
+  'daily-heart-rate-variability': 'daily HRV',
+  'heart-rate-variability': 'HRV',
+  'daily-respiratory-rate': 'breathing rate',
+  'respiratory-rate-sleep-summary': 'sleep breathing',
+  'daily-sleep-temperature-derivations': 'sleep temperature',
+};
+
+export function syncPresentation(status = {}, trackedJobId = null) {
+  if (status.pausedReason === 'GOOGLE_RECONNECT_REQUIRED') {
+    return { jobId: trackedJobId, active: false, phase: 'disconnected', completedChunks: 0, totalChunks: 0, label: 'Reconnect Google Health' };
+  }
+  const jobs = [...(status.active || []), ...(status.recent || [])];
+  const job = (trackedJobId && jobs.find(({ id }) => id === trackedJobId)) || status.active?.[0] || null;
+  if (!job) return { jobId: null, active: false, phase: 'idle', completedChunks: 0, totalChunks: 0, label: 'Local archive' };
+  if (job.status === 'completed') return { jobId: job.id, active: false, phase: 'completed', completedChunks: 0, totalChunks: 0, label: 'Sync complete' };
+  if (['failed', 'completed_with_errors'].includes(job.status)) {
+    return { jobId: job.id, active: false, phase: 'failed', completedChunks: 0, totalChunks: 0, label: 'Sync needs attention' };
+  }
+  const metrics = job.metricsStatus || [];
+  const completedChunks = metrics.reduce((sum, metric) => sum + Number(metric.completedChunks || 0), 0);
+  const totalChunks = metrics.reduce((sum, metric) => sum + Number(metric.totalChunks || 0), 0);
+  const current = metrics.find(({ status }) => status === 'pending')?.metric;
+  const detail = totalChunks ? ` · ${completedChunks}/${totalChunks} steps` : '';
+  const phase = job.status === 'queued' ? 'queued' : 'running';
+  const action = phase === 'queued' ? 'Sync queued' : `Syncing ${metricLabels[current] || current || 'health data'}`;
+  return { jobId: job.id, active: true, phase, completedChunks, totalChunks, label: `${action}${detail}` };
+}
+
+export function syncRetryDelay(failures = 0) {
+  return Math.min(60_000, 5000 * (2 ** Math.max(0, Number(failures) || 0)));
+}

@@ -283,6 +283,7 @@ DELETE /api/journal/:id
 
 POST /api/sync
 GET  /api/sync/status
+GET  /api/operations/status
 
 POST /api/exports
 GET  /api/exports
@@ -291,6 +292,11 @@ GET  /api/exports/:id/download
 ```
 
 Ranges are closed-open: `startDate` is inclusive and `endDateExclusive` is exclusive.
+
+`GET /api/operations/status` is owner-only and uncached. It returns the current daily capacity
+snapshot plus up to 30 days of database and filesystem history, using warning and critical disk
+thresholds of 80% and 90%. It contains aggregate byte counts only—never paths, object names,
+credentials, hashes, or health measurements.
 
 Compatibility wrappers remain available during rollout:
 

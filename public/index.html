@@ -33,14 +33,10 @@
         </a>
 
         <nav class="main-nav" aria-label="Health workspaces">
-          <button class="nav-item is-active" type="button" data-nav="today">Today</button>
-          <button class="nav-item" type="button" data-nav="sleep">Sleep</button>
-          <button class="nav-item" type="button" data-nav="heart">Heart</button>
-          <button class="nav-item" type="button" data-nav="oxygen" aria-label="Blood oxygen">SpO₂</button>
-          <button class="nav-item" type="button" data-nav="calories">Calories</button>
+          <button class="nav-item is-active" type="button" data-nav="sleep">Sleep</button>
+          <button class="nav-item" type="button" data-nav="today">Today</button>
           <button class="nav-item" type="button" data-nav="journal">Journal</button>
-          <button class="nav-item" type="button" data-nav="export">Export</button>
-          <button class="nav-item" type="button" data-nav="settings">Settings</button>
+          <button class="nav-item" type="button" data-nav="more">More</button>
         </nav>
 
         <div class="header-actions">
@@ -166,7 +162,17 @@
 
       <section id="view-more" class="app-view" data-view="more" hidden>
         <div class="workspace-heading"><div><p class="view-kicker">Health Hub</p><h1>More</h1></div></div>
-        <div class="more-workspaces"><button class="button button-secondary" data-nav="heart">Heart</button><button class="button button-secondary" data-nav="oxygen">SpO₂</button><button class="button button-secondary" data-nav="calories">Calories</button><button class="button button-secondary" data-nav="export">Export</button><button class="button button-secondary" data-nav="settings">Settings</button></div>
+        <div class="more-status" aria-label="Health Hub status">
+          <p><span>Synchronization</span><strong id="moreSyncStatus">Checking…</strong></p>
+          <p><span>Storage</span><strong id="moreOperationsStatus">Open Settings for details</strong></p>
+        </div>
+        <div class="more-workspaces">
+          <button class="more-workspace-card" type="button" data-nav="heart" data-more-view="heart"><strong>Heart</strong><span>Resting rate, daily range, coverage, and longer trends.</span></button>
+          <button class="more-workspace-card" type="button" data-nav="oxygen" data-more-view="oxygen"><strong>Blood oxygen · SpO₂</strong><span>Overnight readings, daily estimates, sources, and fetch coverage.</span></button>
+          <button class="more-workspace-card" type="button" data-nav="calories" data-more-view="calories"><strong>Calories</strong><span>Total expenditure with active and basal energy kept separate.</span></button>
+          <button class="more-workspace-card" type="button" data-nav="export" data-more-view="export"><strong>Export</strong><span>Create portable ZIP, CSV, Markdown, and PNG reports.</span></button>
+          <button class="more-workspace-card" type="button" data-nav="settings" data-more-view="settings"><strong>Settings</strong><span>Google connection, synchronization, storage, and operational health.</span></button>
+        </div>
       </section>
 
       <section id="view-heart" class="app-view" data-view="heart" hidden>
@@ -326,6 +332,11 @@
             <button id="connectorConnect" class="button button-primary" type="button" disabled>Connect Google Health</button>
             <button id="connectorDisconnect" class="button button-secondary" type="button" hidden>Disconnect</button>
           </div>
+        </section>
+        <section class="metric-panel" aria-labelledby="operationsHeading">
+          <h2 id="operationsHeading">Operations</h2>
+          <div id="operationsStatus"><p class="metric-empty">Loading capacity status…</p></div>
+          <p class="metric-empty"><a href="https://coolify.philippeho.dev" target="_blank" rel="noreferrer">Open Coolify</a> to inspect backup executions, cleanup history, and server events.</p>
         </section>
       </section>
     </main>

@@ -234,6 +234,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .icon-button svg { width: 18px; height: 18px; }
 
 .app-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 80px; }
+.more-status { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 18px; }
+.more-status p { min-width: 220px; margin: 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-soft); }
+.more-status span, .more-status strong { display: block; }
+.more-status span { margin-bottom: 5px; color: var(--faint); font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; }
+.more-status strong { font-size: .85rem; }
+.more-workspaces { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.more-workspace-card { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: 12px; color: var(--text); background: var(--surface); text-align: left; cursor: pointer; }
+.more-workspace-card:hover { border-color: var(--border-strong); background: var(--surface-raised); }
+.more-workspace-card strong, .more-workspace-card span { display: block; }
+.more-workspace-card strong { margin-bottom: 7px; }
+.more-workspace-card span { color: var(--muted); font-size: .8rem; line-height: 1.55; }
+.operations-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin: 12px 0 18px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--surface-soft); }
+.operations-heading[data-state="warning"] { border-left-color: var(--awake); }
+.operations-heading[data-state="critical"] { border-left-color: var(--danger); }
+.operations-heading span { color: var(--muted); font-size: .8rem; }
+.operations-facts { margin-top: 0; }
+.metric-empty a { color: var(--accent); }
 .notice {
   margin-bottom: 18px;
   padding: 12px 14px;
@@ -795,6 +812,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 #connectorState[data-state="connected"] { color: var(--accent); }
 #connectorState[data-state="disconnected"] { color: var(--awake); }
 @media (max-width: 600px) {
+  .more-workspaces { grid-template-columns: 1fr; }
   #view-settings .summary-facts { grid-template-columns: 1fr; }
 }
 

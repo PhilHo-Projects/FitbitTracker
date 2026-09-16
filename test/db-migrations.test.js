@@ -30,6 +30,7 @@ test('migrations create the permanent health archive tables once', async () => {
     '008_oxygen_saturation.sql',
     '009_sleep_overview.sql',
     '010_sync_recovery.sql',
+    '011_operational_snapshots.sql',
   ]);
   assert.deepEqual(second, []);
   assert.deepEqual(
@@ -50,6 +51,7 @@ test('migrations create the permanent health archive tables once', async () => {
       'journal_entry_revisions',
       'journal_entry_tags',
       'journal_tags',
+      'operational_snapshots',
       'oxygen_saturation_daily_summaries',
       'oxygen_saturation_samples',
       'rateLimit',

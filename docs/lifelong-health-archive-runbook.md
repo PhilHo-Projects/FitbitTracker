@@ -187,6 +187,18 @@ Follow-up actions:
 ### Restore-test history
 
 ```text
+Date/time (UTC): 2026-09-16 04:56
+Operator: Codex using Philippe's authorized Cloudflare/Coolify/Hetzner sessions
+Release/commit: af6e121 base plus the verified Health Hub hardening working tree
+Database dump object (safe name only): pg-dump-health_hub-1789527606.dmp (197,484,483 bytes)
+Archive catalog ID/month/version (no object URL or secrets): Not exercised; all archive, compaction, and pruning gates remained disabled
+Disposable target: PostgreSQL 16 container health-hub-restore-drill-20260916, network disabled and no published port
+Database restore result and checks: PASS; fetched directly from private R2; byte size matched the successful Coolify execution; pg_restore --exit-on-error; 36 public tables; 10 migrations through 010; 1 owner; auth/session records; 249 sync jobs; 2,365,831 heart samples; 17,556 oxygen samples; 83 sleep sessions; 30-day representative sleep and daily-summary queries
+Archive verify/import result and checks: Not in this release; archive execution and pruning remained disabled
+Plaintext cleanup confirmed: Yes; both temporary dump copies removed
+Disposable resources removed: Yes; exact container and volume names verified before removal and confirmed absent afterward
+Follow-up actions: Keep archive/compaction/pruning gates disabled; repeat the R2 database drill quarterly and complete the separate encrypted-archive drill before any archive or pruning approval
+
 Date/time (UTC): 2026-07-22 01:01
 Operator: Codex using Philippe's authorized Cloudflare/Coolify/Hetzner sessions
 Release/commit: be1c0ef (implementation branch; not deployed)

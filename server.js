@@ -29,6 +29,8 @@ import { createSyncRouter } from './lib/routes/sync-routes.js';
 import { createSleepRouter } from './lib/routes/sleep-routes.js';
 import { createSleepService } from './lib/sleep/service.js';
 import { createSleepCheckInRepository } from './lib/sleep/check-ins.js';
+import { createOperationsService } from './lib/operations/service.js';
+import { createOperationsRouter } from './lib/routes/operations-routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,6 +75,7 @@ export function createApp(options = {}) {
           now,
         })
       : null);
+  const operationsService = options.operationsService ?? (pool ? createOperationsService({ pool, now }) : null);
   let journalRepository = options.journalRepository ?? null;
   if (!journalRepository && pool && env.JOURNAL_ENCRYPTION_KEYS) {
     journalRepository = createJournalRepository(
@@ -171,6 +174,7 @@ export function createApp(options = {}) {
     app.use('/api', createHealthRouter({ repository: healthRepository, requireAuth, sleepService }));
   }
   if (sleepService) app.use('/api/sleep', createSleepRouter({ service: sleepService, checkIns: sleepCheckIns, requireAuth }));
+  if (operationsService) app.use('/api/operations', createOperationsRouter({ service: operationsService, requireAuth }));
   if (journalRepository) {
     app.use('/api/journal', createJournalRouter({ repository: journalRepository, requireAuth }));
   } else {
@@ -345,7 +349,8 @@ if (isDirectRun) {
     archiveObjectClient?.destroy();
     archiveObjectClient = null;
   }
-  const app = createApp({ pool, syncService, journalRepository, exportService, connector, oauth });
+  const operationsService = createOperationsService({ pool });
+  const app = createApp({ pool, syncService, journalRepository, exportService, connector, oauth, operationsService });
   const server = app.listen(port, () => {
     console.log(`Personal Health Data Hub listening on http://localhost:${port}`);
   });
@@ -357,11 +362,13 @@ if (isDirectRun) {
   });
   exportService?.start();
   archiveWorker?.start();
+  operationsService.start();
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, async () => {
       syncService?.stop();
       exportService?.stop();
       archiveWorker?.stop();
+      operationsService.stop();
       archiveObjectClient?.destroy();
       server.close();
       await pool?.end();
