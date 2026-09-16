@@ -40,11 +40,11 @@
         </nav>
 
         <div class="header-actions">
-          <span id="syncStatus" class="sync-status" data-state="idle">
+          <span id="syncStatus" class="sync-status" data-state="loading" role="status" aria-live="polite">
             <i aria-hidden="true"></i>
-            <span>Local archive</span>
+            <span>Checking sync status</span>
           </span>
-          <button id="syncButton" class="button button-primary button-compact" type="button">Sync now</button>
+          <button id="syncButton" class="button button-primary button-compact" type="button" disabled>Sync now</button>
           <button id="logoutButton" class="icon-button" type="button" aria-label="Sign out" title="Sign out">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10M14.5 8l4 4-4 4M18.5 12H9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
@@ -336,6 +336,7 @@
         <section class="metric-panel" aria-labelledby="operationsHeading">
           <h2 id="operationsHeading">Operations</h2>
           <div id="operationsStatus"><p class="metric-empty">Loading capacity status…</p></div>
+          <div id="archiveStatus"><p class="metric-empty">Loading archive status…</p></div>
           <p class="metric-empty"><a href="https://coolify.philippeho.dev" target="_blank" rel="noreferrer">Open Coolify</a> to inspect backup executions, cleanup history, and server events.</p>
         </section>
       </section>

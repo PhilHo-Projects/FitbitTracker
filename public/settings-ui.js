@@ -108,11 +108,13 @@ export function syncPresentation(status = {}, trackedJobId = null) {
     return { jobId: trackedJobId, active: false, phase: 'disconnected', completedChunks: 0, totalChunks: 0, label: 'Reconnect Google Health' };
   }
   const jobs = [...(status.active || []), ...(status.recent || [])];
-  const job = (trackedJobId && jobs.find(({ id }) => id === trackedJobId)) || status.active?.[0] || null;
+  const job = status.active?.[0] || (trackedJobId
+    ? jobs.find(({ id }) => id === trackedJobId) : status.recent?.[0]);
+  if (!job && trackedJobId) return { jobId: trackedJobId, active: true, phase: 'unavailable', completedChunks: 0, totalChunks: 0, label: 'Waiting for sync status' };
   if (!job) return { jobId: null, active: false, phase: 'idle', completedChunks: 0, totalChunks: 0, label: 'Local archive' };
   if (job.status === 'completed') return { jobId: job.id, active: false, phase: 'completed', completedChunks: 0, totalChunks: 0, label: 'Sync complete' };
   if (['failed', 'completed_with_errors'].includes(job.status)) {
-    return { jobId: job.id, active: false, phase: 'failed', completedChunks: 0, totalChunks: 0, label: 'Sync needs attention' };
+    return { jobId: job.id, active: false, phase: job.status, completedChunks: 0, totalChunks: 0, label: job.status === 'completed_with_errors' ? 'Sync completed with errors' : 'Sync failed' };
   }
   const metrics = job.metricsStatus || [];
   const completedChunks = metrics.reduce((sum, metric) => sum + Number(metric.completedChunks || 0), 0);

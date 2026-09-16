@@ -69,10 +69,31 @@ test('sync presentation distinguishes terminal outcomes and polling backoff is b
   const completed = { active: [], recent: [{ id: 'done', status: 'completed', metricsStatus: [] }] };
   const partial = { active: [], recent: [{ id: 'partial', status: 'completed_with_errors', metricsStatus: [] }] };
   assert.equal(syncPresentation(completed, 'done').phase, 'completed');
-  assert.equal(syncPresentation(partial, 'partial').phase, 'failed');
+  assert.equal(syncPresentation(partial, 'partial').phase, 'completed_with_errors');
   assert.equal(syncRetryDelay(0), 5000);
   assert.equal(syncRetryDelay(2), 20000);
   assert.equal(syncRetryDelay(99), 60000);
+});
+
+test('a new active sync takes precedence over a tracked terminal job', () => {
+  const result = syncPresentation({ active: [{ id: 'new', status: 'queued' }], recent: [{ id: 'old', status: 'completed' }] }, 'old');
+  assert.equal(result.jobId, 'new');
+  assert.equal(result.phase, 'queued');
+  assert.equal(result.active, true);
+});
+
+test('reload reports the most recent terminal sync when no job is active', () => {
+  assert.equal(syncPresentation({ active: [], recent: [{ id: 'done', status: 'completed' }] }).phase, 'completed');
+});
+
+test('an unobserved tracked job stays locked until a terminal state is confirmed', () => {
+  const result = syncPresentation({ active: [], recent: [] }, 'pending');
+  assert.equal(result.active, true);
+  assert.equal(result.phase, 'unavailable');
+});
+
+test('partial completion is distinct from a failed job', () => {
+  assert.equal(syncPresentation({ recent: [{ id: 'partial', status: 'completed_with_errors' }] }).phase, 'completed_with_errors');
 });
 
 test('no banner when connected and data is fresh', () => {

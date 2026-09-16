@@ -9,6 +9,11 @@ function size(bytes) {
   return `${Math.round(value / 1_000_000)} MB`;
 }
 
+export function renderArchiveState(status) {
+  if (!status) return '<p class="metric-empty">Archive status unavailable.</p>';
+  return `<p class="metric-empty">Archive execution: ${status.configured ? 'enabled' : 'disabled'}. Raw-data pruning: ${status.pruningEnabled ? 'enabled' : 'disabled'}.</p>`;
+}
+
 export function renderOperationsStatus(status) {
   const current = status?.current;
   if (!current) return '<p class="metric-empty">Capacity history will appear after the first operational snapshot.</p>';
@@ -33,4 +38,3 @@ export function renderOperationsStatus(status) {
     <p class="metric-empty">Captured ${escape(new Date(current.capturedAt).toLocaleString())}. Database backups are managed by Coolify and private R2 storage; backup failures are reviewed in Coolify until an external notification channel is configured.</p>
   `;
 }
-

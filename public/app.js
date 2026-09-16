@@ -7,11 +7,12 @@ import {
   isLocalDevelopmentHost,
   sleepStageBreakdown,
 } from './health-ui.js';
-import { connectorBannerMessage, renderConnectorStatus, connectorCallbackMessage, syncPresentation, syncRetryDelay } from './settings-ui.js';
+import { connectorBannerMessage, renderConnectorStatus, connectorCallbackMessage } from './settings-ui.js';
+import { createSyncController } from './sync-controller.js';
 import { renderOxygenNight, renderOxygenTrend, renderOxygenCard } from './oxygen-ui.js';
 import { createSleepWorkspace, sleepDuration, recordedTime } from './sleep-workspace.js';
 import { readWorkspaceLocation, workspaceUrl } from './sleep-navigation.js';
-import { renderOperationsStatus } from './operations-ui.js';
+import { renderOperationsStatus, renderArchiveState } from './operations-ui.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -33,10 +34,6 @@ const state = {
   newestMeasurementAt: null,
   journal: [],
   exportPoll: null,
-  syncPoll: null,
-  syncJobId: null,
-  syncWasActive: false,
-  syncFailures: 0,
 };
 
 function escapeHtml(value) {
@@ -147,6 +144,12 @@ function setSyncState(status, label) {
 async function refreshOperations() {
   const root = $('#operationsStatus');
   if (!root) return;
+  const archive = $('#archiveStatus');
+  if (archive) {
+    void fetchJson('/api/archive/status')
+      .then(status => { archive.innerHTML = renderArchiveState(status); })
+      .catch(() => { archive.innerHTML = renderArchiveState(null); });
+  }
   try {
     const status = await fetchJson('/api/operations/status');
     root.innerHTML = renderOperationsStatus(status);
@@ -252,8 +255,6 @@ function renderToday(data, journal) {
 
   $('#todayLoading').hidden = true;
   $('#todayContent').hidden = false;
-  const sync = data.sync;
-  setSyncState(sync?.stale ? 'stale' : 'ok', sync?.lastSuccessfulSync ? `Synced ${new Date(sync.lastSuccessfulSync).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Local archive');
 }
 
 async function loadToday() {
@@ -507,72 +508,36 @@ async function createExport(event) {
   }
 }
 
-async function syncNow() {
-  const button = $('#syncButton');
-  button.disabled = true;
-  setSyncState('loading', 'Sync queued');
-  try {
-    const job = await fetchJson('/api/sync', { method: 'POST', body: JSON.stringify({ mode: 'recent' }) });
-    state.syncJobId = job.id;
-    state.syncWasActive = true;
-    toast(job.status === 'running' ? 'Sync already running.' : 'Recent sync queued.');
-    clearTimeout(state.syncPoll);
-    await monitorSync({ notifyTerminal: true });
-  } catch (error) {
-    toast(error.message);
-    setSyncState('stale', 'Sync unavailable');
-    button.disabled = false;
-    if (error.code === 'GOOGLE_RECONNECT_REQUIRED') await refreshConnector();
-  }
-}
-
 async function refreshActiveWorkspace() {
   if (state.activeView === 'today') await loadToday();
   else if (state.activeView === 'oxygen') await loadOxygenWorkspace();
   else if (state.activeView === 'sleep') await loadSleepWorkspace();
+  else if (state.activeView === 'heart') await loadHeartWorkspace();
+  else if (state.activeView === 'calories') await loadCalorieWorkspace();
   await refreshConnector();
 }
 
 function applySyncPresentation(presentation) {
-  state.syncJobId = presentation.jobId;
-  state.syncWasActive ||= presentation.active;
   $('#syncButton').disabled = presentation.active;
   setSyncState(
-    ['queued', 'running'].includes(presentation.phase) ? 'loading'
-      : ['failed', 'disconnected', 'unavailable'].includes(presentation.phase) ? 'stale' : 'ok',
+    ['checking', 'queued', 'running'].includes(presentation.phase) ? 'loading'
+      : ['failed', 'completed_with_errors', 'disconnected', 'unavailable'].includes(presentation.phase) ? 'stale' : 'ok',
     presentation.label,
   );
 }
 
-async function monitorSync({ notifyTerminal = false } = {}) {
-  clearTimeout(state.syncPoll);
-  try {
-    const status = await fetchJson('/api/sync/status');
-    state.syncFailures = 0;
-    const presentation = syncPresentation(status, state.syncJobId);
-    applySyncPresentation(presentation);
-    if (presentation.phase === 'disconnected') await refreshConnector();
-    if (presentation.active) {
-      state.syncPoll = setTimeout(() => monitorSync({ notifyTerminal: true }), 5000);
-    } else if (state.syncWasActive && ['completed', 'failed'].includes(presentation.phase)) {
-      state.syncWasActive = false;
-      await refreshActiveWorkspace();
-      if (notifyTerminal) toast(presentation.phase === 'failed'
-        ? 'Sync finished with errors. Check Settings for details.'
-        : 'Sync complete.');
-    }
-  } catch {
-    state.syncFailures += 1;
-    $('#syncButton').disabled = Boolean(state.syncJobId || state.syncWasActive);
-    setSyncState('stale', 'Sync status temporarily unavailable');
-    state.syncPoll = setTimeout(
-      () => monitorSync({ notifyTerminal: true }),
-      syncRetryDelay(state.syncFailures - 1),
-    );
-  }
-}
+const syncController = createSyncController({
+  request: fetchJson,
+  onChange: applySyncPresentation,
+  async onComplete(presentation) {
+    await refreshActiveWorkspace();
+    toast(presentation.phase === 'completed' ? 'Sync complete.' : 'Sync finished with errors. Check Settings for details.');
+  },
+  onError: error => toast(error.message),
+});
 
 async function setView(view, { historyMode = 'push' } = {}) {
+  void syncController.refresh();
   if (view !== 'export') {
     clearTimeout(state.exportPoll);
     state.exportPoll = null;
@@ -743,7 +708,7 @@ $('#datePicker').addEventListener('change', (event) => {
   setView('today');
 });
 $('#addContextButton').addEventListener('click', () => setView('journal'));
-$('#syncButton').addEventListener('click', syncNow);
+$('#syncButton').addEventListener('click', () => syncController.start());
 $('#connectorConnect')?.addEventListener('click', async () => {
   try {
     const data = await fetchJson('/api/connectors/google/authorize', { method: 'POST' });
@@ -802,7 +767,6 @@ if (callbackMessage) toast(callbackMessage);
 restoreLocation('replace');
 // Background syncs and token expiry must become visible without a page reload.
 setInterval(() => { if (!document.hidden) refreshConnector(); }, 60_000);
-monitorSync();
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) monitorSync({ notifyTerminal: true });
+  if (!document.hidden) void syncController.refresh();
 });

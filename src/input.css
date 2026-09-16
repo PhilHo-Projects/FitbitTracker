@@ -737,8 +737,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 
 @media (max-width: 680px) {
   .header-inner, .app-main { width: min(100% - 22px, 1180px); }
-  .header-actions .sync-status { display: none; }
-  .header-actions .button-primary { display: none; }
+  .header-actions { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+  .header-actions .sync-status { order: 3; flex-basis: 100%; min-width: 0; justify-content: flex-end; overflow-wrap: anywhere; }
+  .header-actions .sync-status i { flex-shrink: 0; }
   .brand small { display: none; }
   .app-main { padding-top: 23px; }
   .view-heading, .workspace-heading { display: block; }

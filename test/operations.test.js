@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createOperationsService } from '../lib/operations/service.js';
-import { renderOperationsStatus } from '../public/operations-ui.js';
+import { renderOperationsStatus, renderArchiveState } from '../public/operations-ui.js';
 
 test('operations service records safe daily capacity aggregates and classifies thresholds', async () => {
   const queries = [];
@@ -85,4 +85,13 @@ test('operations UI explains disk warning, database growth and backup boundary',
   assert.match(html, /1\.0 GB/);
   assert.match(html, /Coolify and private R2 storage/);
   assert.doesNotMatch(html, /object|secret|health reading/i);
+});
+
+test('archive guidance renders only execution and pruning gates, not catalog internals', () => {
+  const html = renderArchiveState({ configured: false, pruningEnabled: false, catalog: [{ objectKey: 'private-object', checksum: 'private-hash' }] });
+  assert.match(html, /Archive execution: disabled/);
+  assert.match(html, /Raw-data pruning: disabled/);
+  assert.doesNotMatch(html, /private-object|private-hash/);
+  assert.match(renderArchiveState(null), /unavailable/);
+  assert.match(renderArchiveState({ configured: true, pruningEnabled: true }), /Archive execution: enabled/);
 });
