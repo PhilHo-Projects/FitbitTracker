@@ -19,13 +19,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: fitbit_integration
+          POSTGRES_DB: fitbit_integration_test
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d fitbit_integration"
+          --health-cmd "pg_isready -U postgres -d fitbit_integration_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -38,7 +38,7 @@ jobs:
       - run: npm ci
       - run: npm test
         env:
-          PG_INTEGRATION_URL: postgresql://postgres:postgres@localhost:5432/fitbit_integration
+          PG_INTEGRATION_URL: postgresql://postgres:postgres@localhost:5432/fitbit_integration_test
       - run: npm run build
       - name: Verify generated n8n workflow
         run: |
