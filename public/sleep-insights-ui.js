@@ -3,24 +3,34 @@ const number = value => Number.isFinite(value) ? String(Number(value.toFixed(1))
 const reason = code => ({ 'insufficient-observations': 'Not enough usable nights', 'mixed-sources-or-methods': 'Sources or methods differ' }[code] ?? code);
 const dates = values => values.length ? values.map(date => `<button class="sleep-text-button" data-sleep-date="${date}">${date}</button>`).join(' · ') : 'None';
 const difference = (value, unit) => value.reason ? escape(reason(value.reason)) : `${value.value > 0 ? '+' : ''}${number(value.value)} ${unit === '%' ? 'percentage points' : unit}`;
+const factorName = key => key === 'restfulness' ? 'Feeling rested' : key.charAt(0).toUpperCase() + key.slice(1);
+const groups = data => data.checkInComparisons?.available ? [
+  { factor: 'restfulness', ...data.checkInComparisons.restfulness }, ...data.checkInComparisons.factors,
+] : [];
 function comparison(group) {
-  return `<details class="sleep-pattern-group"><summary>${escape(group.firstLabel)} versus ${escape(group.secondLabel)}</summary><div class="sleep-table-scroll"><table><thead><tr><th>Measurement</th><th>${escape(group.firstLabel)}</th><th>${escape(group.secondLabel)}</th><th>Difference</th></tr></thead><tbody>${Object.values(group.metrics).map(m => `<tr><th>${escape(m.label)} (${escape(m.unit)})</th><td>${number(m.first.value)}<br/><small>${m.first.count} nights</small></td><td>${number(m.second.value)}<br/><small>${m.second.count} nights</small></td><td>${difference(m.difference, m.unit)}<details><summary>Supporting dates</summary><p>First: ${dates(m.first.dates)}</p><p>Second: ${dates(m.second.dates)}</p></details></td></tr>`).join('')}</tbody></table></div></details>`;
+  const duration = group.metrics.duration;
+  const usable = !duration.difference.reason;
+  const maximum = Math.max(1, duration.first.value ?? 0, duration.second.value ?? 0);
+  return `<section class="lens-factor-detail"><div class="sleep-section-heading"><div><h3>${escape(factorName(group.factor))} &amp; time asleep</h3><p class="sleep-meta">${escape(group.firstLabel)} compared with ${escape(group.secondLabel)}.</p></div><span class="lens-status">${usable ? 'Enough nights to compare' : 'More check-ins needed'}</span></div>
+    ${[duration.first, duration.second].map((g, i) => `<div class="lens-comparison-row"><div>${escape(i ? group.secondLabel : group.firstLabel)}<small>${g.count} usable nights · ${g.required} required</small></div><svg viewBox="0 0 600 24" preserveAspectRatio="none" aria-hidden="true"><rect width="${g.value === null ? 0 : g.value / maximum * 600}" height="24" rx="3" fill="${i ? '#455b44' : '#b9dc8c'}"/></svg><strong>${g.value === null ? 'Unavailable' : `${Math.floor(Math.round(g.value) / 60)}h ${String(Math.round(g.value) % 60).padStart(2, '0')}m`}</strong></div>`).join('')}
+    <p class="sleep-meta">${usable ? `${difference(duration.difference, 'min')} in median time asleep. This describes an association, not a cause.` : `${reason(duration.difference.reason)}. Each group needs seven usable nights with matching sources and methods. Unanswered check-ins remain unknown.`}</p>
+    <details class="lens-factor-evidence"><summary>Other outcomes and supporting dates</summary><div class="sleep-table-scroll"><table><thead><tr><th>Measurement</th><th>${escape(group.firstLabel)}</th><th>${escape(group.secondLabel)}</th><th>Difference</th></tr></thead><tbody>${Object.values(group.metrics).map(m => `<tr><th>${escape(m.label)} (${escape(m.unit)})</th><td>${number(m.first.value)}<br/><small>${m.first.count} nights</small></td><td>${number(m.second.value)}<br/><small>${m.second.count} nights</small></td><td>${difference(m.difference, m.unit)}<details><summary>Supporting dates</summary><p>First: ${dates(m.first.dates)}</p><p>Second: ${dates(m.second.dates)}</p></details></td></tr>`).join('')}</tbody></table></div></details></section>`;
 }
-export function renderSleepPatterns(data, { includeCheckIns = false } = {}) {
-  return `<div class="sleep-section-heading"><div><p class="view-kicker">Comparisons and recorded habits</p><h2>Patterns over time</h2></div><div class="sleep-pattern-controls">${[7, 30, 90].map(days => `<button class="button button-secondary" data-pattern-days="${days}" aria-pressed="${data.days === days}">${days} days</button>`).join('')}</div></div>
-    <p>${data.current.startDate}–${data.date}, compared with the preceding ${data.days} days. Goal: ${data.goalMinutes} minutes. Main sleep only; naps stay separate.</p>
-    ${Object.entries(data.sourceChoices ?? {}).filter(([, choices]) => choices.length > 1).map(([key, choices]) => `<label class="sleep-source-label">${escape(key)} source<select data-sleep-source="${key}"><option value="">Automatic when unambiguous</option>${choices.map(s => `<option value="${s.key}" ${data.sources[key] === s.key ? 'selected' : ''}>${escape(s.label)} · ${s.key.slice(0, 8)}</option>`).join('')}</select></label>`).join('')}
-    <div class="sleep-report-actions"><button class="button button-secondary" data-pattern-copy>Copy sleep report</button><button class="button button-secondary" data-pattern-download>Download Markdown</button></div>
-    <label class="check-row"><input type="checkbox" data-pattern-private ${includeCheckIns ? 'checked' : ''}/><span>Include check-in ratings and context tags in the report</span></label>
-    <p class="sleep-meta">Free-text notes and journal content stay out of this concise report. Nothing is sent to an AI service.</p><div data-pattern-fallback hidden><label>Copy this report<textarea readonly rows="12" aria-label="Sleep report text"></textarea></label></div>
-    <div class="sleep-table-scroll"><table class="sleep-comparison-table"><thead><tr><th>Measurement</th><th>Current</th><th>Previous</th><th>Change</th></tr></thead><tbody>${Object.entries(data.current.metrics).map(([key, m]) => {
-      const p = data.previous.metrics[key];
-      return `<tr><th>${escape(m.label)} <small>(${escape(m.unit)})</small></th><td>${number(m.value)}<br/><small>${m.count}/${data.days} nights</small></td><td>${number(p.value)}<br/><small>${p.count}/${data.days} nights</small></td><td>${difference(data.differences[key], m.unit)}<details><summary>Counts and dates</summary><p>Requires ${m.required} usable nights in each period.</p><p>Current: ${dates(m.dates)}</p><p>Previous: ${dates(p.dates)}</p></details></td></tr>`;
-    }).join('')}</tbody></table></div>
-    <p class="sleep-meta">${escape(data.rules.consistency)} Each dimension stands on its own. A higher or lower physiological measurement is not automatically better or worse.</p>
-    <h3>Restfulness and logged factors</h3><p class="sleep-meta">${escape(data.rules.habits)} Only explicitly reviewed nights can establish that a factor was absent.</p>
-    ${data.checkInComparisons?.available ? `${comparison(data.checkInComparisons.restfulness)}<details><summary>Neutral and unanswered ratings</summary><p>Neutral (3): ${dates(data.checkInComparisons.restfulness.neutralDates)}</p><p>Unanswered: ${dates(data.checkInComparisons.restfulness.unansweredDates)}</p></details>${data.checkInComparisons.factors.map(comparison).join('')}` : '<p>Check-in comparisons are unavailable until encrypted check-ins are configured.</p>'}
-    <details class="sleep-pattern-availability"><summary>Fetch coverage and missing measurements</summary>${Object.entries(data.availability).map(([key, a]) => `<p><strong>${escape(key)}</strong>: ${escape(a.observationState)} · ${a.recordCount} stored observations in the fetch window. Last successful fetch: ${escape(a.lastSuccessfulFetchAt ?? 'Never')}.${a.errorCode ? ` ${escape(a.errorCode)}${a.httpStatus ? ` (HTTP ${a.httpStatus})` : ''}.` : ''}</p>`).join('')}<p>${escape(data.rules.missing)}</p></details>`;
+function periodTable(data) {
+  return `<div class="sleep-table-scroll"><table class="sleep-comparison-table"><thead><tr><th>Measurement</th><th>Current ${data.days} days</th><th>Previous ${data.days} days</th><th>Change</th></tr></thead><tbody>${Object.entries(data.current.metrics).map(([key, m]) => {
+    const p = data.previous.metrics[key];
+    return `<tr><th>${escape(m.label)} <small>(${escape(m.unit)})</small></th><td>${number(m.value)}<br/><small>${m.count}/${data.days} nights</small></td><td>${number(p.value)}<br/><small>${p.count}/${data.days} nights</small></td><td>${difference(data.differences[key], m.unit)}<details><summary>Counts and dates</summary><p>Requires ${m.required} usable nights in each period.</p><p>Current: ${dates(m.dates)}</p><p>Previous: ${dates(p.dates)}</p></details></td></tr>`;
+  }).join('')}</tbody></table></div><p class="sleep-meta">${escape(data.rules.consistency)} Higher or lower physiology is not automatically better or worse.</p>`;
+}
+export function renderSleepPatterns(data, { includeCheckIns = false, view = 'all', factor = 'restfulness' } = {}) {
+  const allGroups = groups(data), selected = allGroups.find(g => g.factor === factor) ?? allGroups[0];
+  const factors = `<p class="lens-pattern-intro">These comparisons use <strong>morning check-in ratings and selected factors</strong>. Journal text is not analyzed. Regular sleep trends work without check-ins.</p>
+    ${allGroups.length ? `<div class="lens-factor-cards">${['restfulness', 'caffeine', 'stress'].map(key => allGroups.find(g => g.factor === key)).filter(Boolean).map(g => {const m = g.metrics.duration;return `<button type="button" data-pattern-factor="${escape(g.factor)}" aria-pressed="${g === selected}"><strong>${escape(factorName(g.factor))}</strong><span>${m.difference.reason ? 'More check-ins needed' : difference(m.difference, m.unit)}</span><small>Median time asleep · ${m.first.count} vs. ${m.second.count} nights</small></button>`;}).join('')}</div><div class="lens-factor-picker" role="group" aria-label="Choose a recorded factor">${allGroups.map(g => `<button class="button button-secondary" data-pattern-factor="${escape(g.factor)}" aria-pressed="${g === selected}">${escape(factorName(g.factor))}</button>`).join('')}</div>${comparison(selected)}<details class="lens-private-counts"><summary>Neutral and unanswered ratings</summary><p>Neutral (3): ${dates(data.checkInComparisons.restfulness.neutralDates)}</p><p>Unanswered: ${dates(data.checkInComparisons.restfulness.unansweredDates)}</p></details>` : '<p class="sleep-meta">Check-in comparisons are unavailable until encrypted check-ins are configured.</p>'}`;
+  return `<div class="sleep-section-heading"><div><h2>${view === 'patterns' ? 'Recorded habits & restfulness' : 'What changed?'}</h2><p class="sleep-meta">${data.current.startDate}–${data.date}${view === 'patterns' ? '' : ` · compared with the preceding ${data.days} days`}</p></div><div class="sleep-pattern-controls">${[7, 30, 90].map(days => `<button class="button button-secondary" data-pattern-days="${days}" aria-pressed="${data.days === days}">${days} days</button>`).join('')}</div></div>
+    ${Object.entries(data.sourceChoices ?? {}).filter(([, choices]) => choices.length > 1).map(([key, choices]) => `<label class="sleep-source-label">${escape(key)} source<select data-sleep-source="${key}"><option value="">Automatic when unambiguous</option>${choices.map(s => `<option value="${escape(s.key)}" ${data.sources[key] === s.key ? 'selected' : ''}>${escape(s.label)} · ${escape(s.key.slice(0, 8))}</option>`).join('')}</select></label>`).join('')}
+    ${view !== 'patterns' ? periodTable(data) : ''}${view !== 'trends' ? factors : ''}
+    <details class="lens-report-tools"><summary>Copy or download a sleep report</summary><div class="sleep-report-actions"><button class="button button-secondary" data-pattern-copy>Copy sleep report</button><button class="button button-secondary" data-pattern-download>Download Markdown</button></div><label class="check-row"><input type="checkbox" data-pattern-private ${includeCheckIns ? 'checked' : ''}/><span>Include check-in ratings and context tags in the report</span></label><p class="sleep-meta">Free-text notes and journal content stay out of this concise report. Nothing is sent to an AI service.</p></details><div data-pattern-fallback hidden><label>Copy this report<textarea readonly rows="12" aria-label="Sleep report text"></textarea></label></div>
+    <details class="sleep-pattern-availability"><summary>Fetch coverage and missing measurements</summary>${Object.entries(data.availability).map(([key, a]) => `<p><strong>${escape(key)}</strong>: ${escape(a.observationState)} · ${a.recordCount} stored observations. Last successful fetch: ${escape(a.lastSuccessfulFetchAt ?? 'Never')}.${a.errorCode ? ` ${escape(a.errorCode)}${a.httpStatus ? ` (HTTP ${a.httpStatus})` : ''}.` : ''}</p>`).join('')}<p>${escape(data.rules.missing)}</p></details>`;
 }
 export async function copySleepReport(markdown, { clipboard, fallback }) {
   try {
@@ -33,47 +43,55 @@ export async function copySleepReport(markdown, { clipboard, fallback }) {
   }
 }
 export function createSleepPatterns({ root, fetchJson, notify }) {
-  let date = null, sources = {}, days = 30, includeCheckIns = false, version = 0;
+  let date = null, sources = {}, days = 30, includeCheckIns = false, version = 0, factor = 'restfulness', cached = null;
   const target = () => root.querySelector('[data-sleep-patterns]');
+  function paint() {
+    if (!cached) return;
+    if (target()) target().innerHTML = renderSleepPatterns(cached, { includeCheckIns, view: 'patterns', factor });
+    const periods = root.querySelector('[data-period-comparisons]');
+    if (periods) periods.innerHTML = renderSleepPatterns(cached, { includeCheckIns, view: 'trends' });
+  }
   const parameters = () => new URLSearchParams({ date, days: String(days), sources: JSON.stringify(sources) });
   async function refresh() {
     const token = ++version, element = target();
     if (!date || !element) return;
-    element.innerHTML = '<h2>Patterns over time</h2><p role="status">Loading comparisons…</p>';
+    cached = null;
+    for (const block of root.querySelectorAll('[data-sleep-patterns], [data-period-comparisons]')) block.innerHTML = '<p role="status">Loading comparisons…</p>';
     try {
       const data = await fetchJson(`/api/sleep/insights?${parameters()}`);
-      if (token === version && target() === element) element.innerHTML = renderSleepPatterns(data, { includeCheckIns });
+      if (token === version && target() === element) { cached = data; paint(); }
     } catch {
-      if (token === version && target() === element) element.innerHTML = '<h2>Patterns over time</h2><p>Comparisons are unavailable. Your nightly report remains available.</p><button class="button button-secondary" data-pattern-retry>Retry comparisons</button>';
+      if (token === version && target() === element) for (const block of root.querySelectorAll('[data-sleep-patterns], [data-period-comparisons]')) block.innerHTML = '<p>Comparisons are unavailable. Your nightly report remains available.</p><button class="button button-secondary" data-pattern-retry>Retry comparisons</button>';
     }
   }
   root.addEventListener('change', event => {
     if (event.target.hasAttribute('data-pattern-private')) {
       includeCheckIns = event.target.checked;
+      for (const input of root.querySelectorAll('[data-pattern-private]')) input.checked = includeCheckIns;
       version++;
-      const fallback = target()?.querySelector('[data-pattern-fallback]');
-      if (fallback) { fallback.hidden = true; fallback.querySelector('textarea').value = ''; }
+      for (const fallback of root.querySelectorAll('[data-pattern-fallback]')) { fallback.hidden = true; fallback.querySelector('textarea').value = ''; }
     }
   });
   root.addEventListener('click', async event => {
     const button = event.target.closest('button');
     if (!button) return;
+    if (button.hasAttribute('data-pattern-factor')) { factor = button.dataset.patternFactor; paint(); root.querySelector(`[data-pattern-factor="${factor}"]`)?.focus({ preventScroll: true }); return; }
     if (button.hasAttribute('data-pattern-days')) { days = Number(button.dataset.patternDays); await refresh(); }
     if (button.hasAttribute('data-pattern-retry')) await refresh();
     if (!button.hasAttribute('data-pattern-copy') && !button.hasAttribute('data-pattern-download')) return;
-    const token = version, element = target(), params = parameters();
+    const token = version, element = button.closest('[data-sleep-patterns], [data-period-comparisons]'), params = parameters();
     params.set('includeSleepCheckIns', String(includeCheckIns));
     button.disabled = true;
     try {
       const report = await fetchJson(`/api/sleep/summary?${params}`);
-      if (token !== version || target() !== element) return;
+      if (token !== version || !root.contains(element)) return;
       if (button.hasAttribute('data-pattern-download')) {
         const url = URL.createObjectURL(new Blob([report.markdown], { type: 'text/markdown;charset=utf-8' }));
         const link = document.createElement('a'); link.href = url; link.download = `sleep-${date}-${days}days.md`; link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else {
         const copied = await copySleepReport(report.markdown, { clipboard: globalThis.navigator?.clipboard, fallback: markdown => {
-          if (token !== version || target() !== element) return;
+          if (token !== version || !root.contains(element)) return;
           const holder = element.querySelector('[data-pattern-fallback]'), input = holder.querySelector('textarea');
           holder.hidden = false; input.value = markdown; input.focus(); input.select();
         } });
@@ -82,6 +100,6 @@ export function createSleepPatterns({ root, fetchJson, notify }) {
     } catch (error) { if (token === version) notify(error.message); }
     finally { button.disabled = false; }
   });
-  return { load(selection) { date = selection.date; sources = selection.sources ?? {}; return refresh(); },
+  return { setDays(value) { days = value; return refresh(); }, load(selection) { date = selection.date; sources = selection.sources ?? {}; return refresh(); },
     refresh, cancel() { version++; } };
 }

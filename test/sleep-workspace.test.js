@@ -8,7 +8,16 @@ import {
   cursorReading,
   sleepDuration,
   recordedTime,
+  renderSleepReport,
 } from "../public/sleep-workspace.js";
+
+test('an empty archive gives every sleep workspace a useful empty state', () => {
+  const html = renderSleepReport({ date: null, session: null, dates: [] });
+  assert.equal((html.match(/No sleep history yet/g) ?? []).length, 2);
+  assert.match(html, /Data &amp; settings/);
+  assert.match(html, /data-sleep-latest disabled/);
+  assert.doesNotMatch(html, /data-sleep-timeline/);
+});
 
 test("workspace URLs restore sleep selection through Today, Settings and legacy links", () => {
   const selection = {
@@ -16,7 +25,7 @@ test("workspace URLs restore sleep selection through Today, Settings and legacy 
     sessionId: "11111111-1111-4111-8111-111111111111",
     sources: { hrv: "a".repeat(64) },
   };
-  for (const view of ["sleep", "today", "settings", "more"]) {
+  for (const view of ["sleep", "trends", "patterns", "today", "settings", "more"]) {
     const location = new URL(
       workspaceUrl(view, "2026-11-02", selection),
       "https://example.test",

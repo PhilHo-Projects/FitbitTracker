@@ -38,13 +38,13 @@ test('Today keeps the recorded period and efficiency beside actual sleep', async
   assert.doesNotMatch(app, /\$\('#sleepAwake'\)/);
 });
 
-test('primary navigation is focused and More explains every specialist workspace', async () => {
+test('primary navigation focuses on sleep and Data & settings preserves specialist workspaces', async () => {
   const { html } = await sources();
   const desktopNav = html.slice(
     html.indexOf('<nav class="main-nav"'),
     html.indexOf('</nav>', html.indexOf('<nav class="main-nav"')),
   );
-  for (const view of ['sleep', 'today', 'journal', 'more']) {
+  for (const view of ['sleep', 'trends', 'patterns', 'journal']) {
     assert.match(desktopNav, new RegExp(`data-nav="${view}"`));
   }
   for (const view of ['heart', 'oxygen', 'calories', 'export', 'settings']) {

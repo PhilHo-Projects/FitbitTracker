@@ -1,5 +1,7 @@
 const views = [
   "sleep",
+  "trends",
+  "patterns",
   "today",
   "heart",
   "oxygen",
@@ -10,6 +12,7 @@ const views = [
   "more",
 ];
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+export const isSleepView = view => ['sleep', 'trends', 'patterns'].includes(view);
 export function readWorkspaceLocation(location) {
   const [hashView, query = ""] = location.hash.slice(1).split("?");
   const view =
@@ -25,7 +28,7 @@ export function readWorkspaceLocation(location) {
   try {
     sources = JSON.parse(params.get("sources") ?? "{}");
   } catch {}
-  const sleepDate = params.get(view === "sleep" ? "date" : "sleepDate");
+  const sleepDate = params.get(isSleepView(view) ? "date" : "sleepDate");
   return {
     view,
     date: datePattern.test(params.get("date") ?? "")
@@ -33,14 +36,14 @@ export function readWorkspaceLocation(location) {
       : null,
     sleepSelection: {
       date: datePattern.test(sleepDate ?? "") ? sleepDate : null,
-      sessionId: params.get(view === "sleep" ? "sessionId" : "sleepSessionId"),
+      sessionId: params.get(isSleepView(view) ? "sessionId" : "sleepSessionId"),
       sources,
     },
   };
 }
 export function workspaceUrl(view, date, sleepSelection = {}) {
   const params = new URLSearchParams();
-  if (view === "sleep") {
+  if (isSleepView(view)) {
     if (sleepSelection.date) params.set("date", sleepSelection.date);
     if (sleepSelection.sessionId)
       params.set("sessionId", sleepSelection.sessionId);

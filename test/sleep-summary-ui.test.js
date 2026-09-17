@@ -34,3 +34,27 @@ test('clipboard rejection and unavailability both expose selectable report text'
   assert.equal(await copySleepReport('unavailable', { fallback: value => { fallback = value; } }), false);
   assert.equal(fallback, 'unavailable');
 });
+
+test('Trends and Patterns separate period calculations from reviewed-factor comparisons', () => {
+  const date = '2026-09-13';
+  const nights = Array.from({ length: 60 }, (_, i) => ({
+    date: shiftDate(date, -i), session: { id: String(i), processed: true }, sessions: [],
+    metrics: { duration: { value: i < 7 ? 450 : 420, eligible: true, sourceKey: 'source', method: 'method', unit: 'min' } },
+  }));
+  const checkIns = nights.slice(0, 14).map((n, i) => ({ date: n.date, restfulness: i < 7 ? 5 : 1,
+    context: i < 7 ? ['caffeine'] : [], contextReviewed: true, note: 'PRIVATE NOTE' }));
+  const data = buildSleepInsights({ date, days: 30, nights, checkIns });
+  const trends = renderSleepPatterns(data, { view: 'trends' });
+  assert.match(trends, /sleep-comparison-table/);
+  assert.doesNotMatch(trends, /data-pattern-factor/);
+  const patterns = renderSleepPatterns(data, { view: 'patterns', factor: 'caffeine' });
+  assert.doesNotMatch(patterns, /sleep-comparison-table/);
+  assert.match(patterns, /data-pattern-factor="caffeine" aria-pressed="true"/);
+  assert.match(patterns, /\+30 min/);
+  assert.match(patterns, /7 usable nights/);
+  assert.doesNotMatch(patterns, /PRIVATE NOTE/);
+  checkIns[13].contextReviewed = false;
+  const insufficient = renderSleepPatterns(buildSleepInsights({ date, days: 30, nights, checkIns }), { view: 'patterns', factor: 'caffeine' });
+  assert.match(insufficient, /More check-ins needed/);
+  assert.doesNotMatch(insufficient.split('<section class="lens-factor-detail">')[1].split('</section>')[0], /\+30 min/);
+});

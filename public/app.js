@@ -11,7 +11,7 @@ import { connectorBannerMessage, renderConnectorStatus, connectorCallbackMessage
 import { createSyncController } from './sync-controller.js';
 import { renderOxygenNight, renderOxygenTrend, renderOxygenCard } from './oxygen-ui.js';
 import { createSleepWorkspace, sleepDuration, recordedTime } from './sleep-workspace.js';
-import { readWorkspaceLocation, workspaceUrl } from './sleep-navigation.js';
+import { readWorkspaceLocation, workspaceUrl, isSleepView } from './sleep-navigation.js';
 import { renderOperationsStatus, renderArchiveState } from './operations-ui.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -408,15 +408,29 @@ function renderJournalList(entries) {
     : '<p class="empty-copy">No context recorded for this date.</p>';
 }
 
+let journalVersion = 0;
 async function loadJournal() {
-  const end = shiftDate(state.selectedDate, 1);
+  const token = ++journalVersion, selectedDate = state.selectedDate, end = shiftDate(selectedDate, 1);
   resetJournalForm();
-  try {
-    renderJournalList(await fetchJson(`/api/journal?start=${state.selectedDate}&end=${end}`));
-  } catch (error) {
-    $('#journalList').innerHTML = `<p class="empty-copy error-copy">${escapeHtml(error.message)}</p>`;
-  }
+  $('#journalCheckIns').innerHTML = '<p class="sleep-meta" role="status">Loading recent check-ins…</p>';
+  const [notes, checkins] = await Promise.allSettled([
+    fetchJson(`/api/journal?start=${selectedDate}&end=${end}`),
+    fetchJson(`/api/sleep/check-ins?start=${shiftDate(selectedDate,-29)}&end=${end}`),
+  ]);
+  if (token !== journalVersion) return;
+  if (notes.status === 'fulfilled') renderJournalList(notes.value);
+  else $('#journalList').innerHTML = `<p class="empty-copy error-copy">${escapeHtml(notes.reason.message)}</p>`;
+  if (checkins.status === 'rejected') $('#journalCheckIns').innerHTML = '<p class="sleep-meta">Morning check-ins are unavailable. Your journal remains available.</p>';
+  else $('#journalCheckIns').innerHTML = checkins.value.length ? [...checkins.value].reverse().map(e => `<article class="lens-journal-checkin"><time>${formatDate(e.date,{short:true,compact:true})}</time><div><strong>${['Very tired','Somewhat tired','Okay','Rested','Very rested'][e.restfulness-1] ?? 'Not rated'}</strong><span>${e.context?.length ? escapeHtml(e.context.join(', ')) : e.contextReviewed ? 'No unusual factors' : 'Factors not reviewed'}</span>${e.note ? `<p>${escapeHtml(e.note)}</p>` : ''}</div><button class="button button-secondary" data-open-checkin="${e.date}">View / edit</button></article>`).join('') : '<p class="sleep-meta">No check-ins in the last 30 days. Add one from your nightly report.</p>';
 }
+$('#journalCheckIns').addEventListener('click', async event => {
+  const button = event.target.closest('[data-open-checkin]');
+  if (!button) return;
+  state.sleepSelection = { ...state.sleepSelection, date: button.dataset.openCheckin, sessionId: null };
+  state.selectedDate = button.dataset.openCheckin;
+  await setView('sleep', { reloadSleep: true });
+  sleepWorkspace.openCheckIn();
+});
 
 async function saveJournal(event) {
   event.preventDefault();
@@ -511,7 +525,7 @@ async function createExport(event) {
 async function refreshActiveWorkspace() {
   if (state.activeView === 'today') await loadToday();
   else if (state.activeView === 'oxygen') await loadOxygenWorkspace();
-  else if (state.activeView === 'sleep') await loadSleepWorkspace();
+  else if (isSleepView(state.activeView)) await loadSleepWorkspace();
   else if (state.activeView === 'heart') await loadHeartWorkspace();
   else if (state.activeView === 'calories') await loadCalorieWorkspace();
   await refreshConnector();
@@ -536,23 +550,25 @@ const syncController = createSyncController({
   onError: error => toast(error.message),
 });
 
-async function setView(view, { historyMode = 'push' } = {}) {
+async function setView(view, { historyMode = 'push', reloadSleep = false } = {}) {
+  const stayInSleep = isSleepView(state.activeView) && isSleepView(view) && $('#sleepWorkspace').querySelector('[data-sleep-page-title]');
   void syncController.refresh();
   if (view !== 'export') {
     clearTimeout(state.exportPoll);
     state.exportPoll = null;
   }
   state.activeView = view;
-  if (view !== 'sleep') sleepWorkspace.cancel();
+  if (!isSleepView(view)) sleepWorkspace.cancel();
+  else sleepWorkspace.setMode(view);
   if (view !== 'oxygen') state.oxygenRequestVersion++;
   $$('.app-view').forEach((element) => {
-    element.hidden = element.dataset.view !== view;
+    element.hidden = element.dataset.view !== (isSleepView(view) ? 'sleep' : view);
   });
-  $$('.nav-item').forEach((item) => item.classList.toggle('is-active', item.dataset.nav === view || item.dataset.nav === 'more' && ['heart','oxygen','calories','export','settings'].includes(view)));
+  $$('.nav-item').forEach((item) => { const active = item.dataset.nav === view || item.dataset.nav === 'more' && ['heart','oxygen','calories','export','settings','today'].includes(view); item.classList.toggle('is-active', active); if (active) item.setAttribute('aria-current','page'); else item.removeAttribute('aria-current'); });
   if (historyMode !== 'none') window.history[historyMode === 'replace' ? 'replaceState' : 'pushState']({}, '', workspaceUrl(view,state.selectedDate,state.sleepSelection));
   window.scrollTo({ top: 0, behavior: 'instant' });
   if (view === 'today') await loadToday();
-  if (view === 'sleep') await loadSleepWorkspace();
+  if (isSleepView(view) && (!stayInSleep || reloadSleep)) await loadSleepWorkspace();
   if (view === 'heart') await loadHeartWorkspace();
   if (view === 'oxygen') await loadOxygenWorkspace();
   if (view === 'calories') await loadCalorieWorkspace();
@@ -745,11 +761,11 @@ $('#exportForm').addEventListener('submit', createExport);
 
 const sleepWorkspace = createSleepWorkspace({
   root: $('#sleepWorkspace'), fetchJson, notify: toast,
-  navigate(selection) { state.sleepSelection = selection; if(selection.date)state.selectedDate=selection.date; setView('sleep'); },
+  navigate(selection, view = 'sleep') { state.sleepSelection = selection; if(selection.date)state.selectedDate=selection.date; void setView(view, { reloadSleep: true }); },
   onResolved(report) {
     if(report.timezone)profileTimezone=report.timezone;
     if(report.date) { state.selectedDate=report.date; state.sleepSelection={...state.sleepSelection,date:report.date,sessionId:report.session?.id??null}; }
-    if(state.activeView==='sleep')window.history.replaceState({},'',workspaceUrl('sleep',state.selectedDate,state.sleepSelection));
+    if(isSleepView(state.activeView))window.history.replaceState({},'',workspaceUrl(state.activeView,state.selectedDate,state.sleepSelection));
     updateDateControls();
   },
 });
@@ -758,7 +774,7 @@ function restoreLocation(historyMode='none') {
   state.sleepSelection=route.sleepSelection;
   if(route.date)state.selectedDate=route.date;
   updateDateControls();
-  setView(route.view,{historyMode});
+  setView(route.view,{historyMode,reloadSleep:true});
 }
 window.addEventListener('popstate',()=>restoreLocation());
 window.addEventListener('hashchange',()=>{const route=readWorkspaceLocation(window.location);if(route.view!==state.activeView)restoreLocation();});

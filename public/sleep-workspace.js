@@ -191,38 +191,26 @@ function timelineMarkup(report) {
 function checkInMarkup(date, entry) {
   return `<form data-sleep-check-in><p class="sleep-meta">Optional · morning of ${escape(date)}. Leave any answer blank.</p><fieldset><legend>How rested do you feel?</legend><div class="sleep-rating-options">${rested.map((text, i) => `<label><input type="radio" name="restfulness" value="${i + 1}" ${entry?.restfulness === i + 1 ? "checked" : ""}/><span>${text}</span></label>`).join("")}</div></fieldset><fieldset><legend>How many awakenings do you remember?</legend><div class="sleep-choice-options">${[0, 1, 2, 3].map((n) => `<label><input type="radio" name="awakenings" value="${n}" ${entry?.awakenings === n ? "checked" : ""}/><span>${n === 3 ? "3+" : n}</span></label>`).join("")}</div></fieldset><fieldset><legend>Anything unusual?</legend><div class="sleep-choice-options">${contexts.map((c) => `<label><input type="checkbox" name="context" value="${c}" ${entry?.context?.includes(c) ? "checked" : ""}/><span>${c}</span></label>`).join("")}<label><input type="checkbox" name="contextNone" ${entry?.contextReviewed && !entry?.context?.length ? "checked" : ""}/><span>None of these factors</span></label></div></fieldset><label class="sleep-note-label">Optional note<textarea name="note" rows="2" maxlength="2000" placeholder="A little context for this night">${escape(entry?.note ?? "")}</textarea></label><div class="sleep-form-actions"><button class="button button-primary" type="submit">${entry ? "Update" : "Save"} check-in</button><button class="button button-secondary" type="button" data-sleep-skip>Skip</button><button class="button button-secondary" type="reset">Clear answers</button>${entry ? '<button class="button button-secondary" type="button" data-sleep-delete>Delete</button>' : ""}</div><p class="sleep-meta">Encrypted with your journal key. Context is recorded without inferring its effects.</p></form>`;
 }
-function reportMarkup(report) {
-  const date = report.date,
-    session = report.session,
-    a = report.assessment,
-    dates = report.dates ?? [],
-    index = dates.indexOf(date);
-  const header = `<div class="sleep-heading"><div><p class="view-kicker">Sleep overview</p><h1>${date ? dateLabel(date) : "Your sleep"}</h1><p>Time asleep. What changed. What the data supports.</p></div><div class="sleep-date-controls"><button class="button button-secondary" data-sleep-date="${dates[index + 1] ?? (date ? shift(date, -1) : "")}" ${!date ? "disabled" : ""} aria-label="Previous recorded night">←</button><label><span class="sr-only">Sleep wake date</span><input type="date" data-sleep-calendar value="${date ?? ""}"/></label><button class="button button-secondary" data-sleep-date="${dates[index - 1] ?? (date ? shift(date, 1) : "")}" ${!date || date >= dates[0] ? "disabled" : ""} aria-label="Next recorded night">→</button><button class="button button-secondary" data-sleep-latest>Latest night</button></div></div>`;
-  if (!session)
-    return `${header}<section class="sleep-card"><h2>No sleep recorded${date ? " on this date" : ""}</h2><p>Available measurements and saved history will remain intact. Sync can fetch newly processed records.</p></section><section data-sleep-patterns class="sleep-card"></section><section data-sleep-trends class="sleep-card"></section>`;
-  const primary =
-    report.mainSessionId === session.id
-      ? "Main sleep"
-      : session.isNap
-        ? "Nap"
-        : "Additional sleep";
-  const signalSources = Object.entries(report.physiology)
-    .map(([key, m]) => sourceSelect(key, m))
-    .join("");
-  return `${header}<div class="sleep-session-row"><label>Session<select data-sleep-session>${report.sessions.map((s) => `<option value="${s.id}" ${s.id === session.id ? "selected" : ""}>${s.id === report.mainSessionId ? "Main sleep" : s.isNap ? "Nap" : "Additional sleep"} · ${sleepDuration(s.minutesAsleep)} · ${recordedTime(s.startTime, s.startOffsetSeconds, report.timezone)}–${recordedTime(s.endTime, s.endOffsetSeconds, report.timezone)}</option>`).join("")}</select></label>${a.provisional ? '<span class="sleep-badge">Provisional</span>' : ""}<details class="sleep-data-status"><summary>${a.notes.length ? "Some data unavailable" : "Data details"}</summary><p>Newest measurement in this report: ${escape(report.newestMeasurementAt)}.</p><p>Sleep processing: ${session.processed === true ? "complete" : session.processed === false ? "pending" : "not provided"}. Stages: ${escape(session.metadata.stagesStatus ?? "status not provided")}.</p>${Object.entries(
-    report.availability,
-  )
-    .map(
-      ([key, v]) =>
-        `<p><strong>${key}</strong>: ${v.permissionDenied ? "permission denied" : v.lastAttemptStatus}${v.fetchComplete ? " · completed fetch" : ""} · ${v.observationState ?? "not loaded"}<br/>Last successful fetch: ${escape(v.lastSuccessfulFetchAt ?? "not recorded")}. ${v.reliability}</p>`,
-    )
-    .join(
-      "",
-    )}<p>Missing measurements are not evidence that all signals are normal. An empty completed fetch does not establish device support.</p></details></div>
-    <div class="sleep-overview-grid"><div class="sleep-main-column"><section class="sleep-card sleep-report-card"><p class="view-kicker">${primary} · actual time asleep</p><div class="sleep-primary-number">${sleepDuration(session.minutesAsleep)}</div><div class="sleep-secondary-numbers"><span>${sleepDuration(session.durationMinutes)} recorded period</span><span>${sleepDuration(session.minutesAwake)} awake</span><span>${sleepDuration(report.totalSleep.minutesAsleep)} total including naps</span></div>${report.totalSleep.reason ? `<p class="sleep-data-note">Combined total unavailable: ${escape(report.totalSleep.reason)}.</p>` : ""}${renderSleepAssessment(a)}<div class="sleep-indicators">${a.indicators.map((indicator) => `<a href="#sleep-indicator-${indicator.key}" data-indicator="${indicator.key}"><span>${indicator.label}</span><strong>${indicator.key === "duration" ? (session.isNap ? "Nap" : a.metrics.duration.goalDifferenceMinutes < 0 ? "Below goal" : "Goal met") : indicator.metrics.every((k) => a.metrics[k].assessable) ? (indicator.metrics.some((k) => ["above", "below"].includes(a.metrics[k].baseline.comparison)) ? "Changed" : "In recent range") : indicator.key === "signals" ? "Partial data" : "Building baseline"}</strong></a>`).join("")}</div><details class="sleep-goal"><summary>Sleep goal · ${sleepDuration(report.preferences.goalMinutes)}</summary><form data-sleep-goal><label>Chosen goal in minutes<input name="goalMinutes" type="number" min="60" max="1440" step="1" value="${report.preferences.goalMinutes}" required/></label><button class="button button-secondary" type="submit">Update goal</button></form><p>This preference is separate from your recent sleep baseline.</p></details></section>
-    ${timelineMarkup(report)}<section data-sleep-patterns class="sleep-card"></section><section data-sleep-trends class="sleep-card"></section>
-    <section class="sleep-card"><h2>What supports this assessment?</h2><p class="sleep-meta">Recent range = your previous 28 calendar days, excluding this night. At least 14 usable nights per measurement. Historical comparisons, not clinical reference intervals.</p>${a.indicators.map((i) => `<div id="sleep-indicator-${i.key}" class="sleep-indicator-detail"><h3>${i.label}</h3>${i.metrics.map((key) => evidence(a.metrics[key], key)).join("")}</div>`).join("")}</section></div>
-    <aside class="sleep-side-column"><section class="sleep-card"><h2>Morning check-in</h2><div data-sleep-check-in-container>${report.checkInDate ? "Loading your optional check-in…" : "Available when a main sleep is recorded for this wake date."}</div></section><section class="sleep-card"><p class="view-kicker">Provider date · ${date}</p><h2>Supporting measurements</h2><p class="sleep-meta">Daily values are associated with this date, including when you select a nap.</p>${["hrv", "breathing", "temperature", "spo2"].map((key) => `<div class="sleep-supporting-measurement"><span>${a.metrics[key].label}</span><strong>${measurementLabel(a.metrics[key])}</strong></div>`).join("")}<div class="sleep-supporting-measurement"><span>Sleep-onset latency</span><strong>${sleepDuration(session.timeToSleepMinutes)}</strong></div><details><summary>Sources &amp; provider details</summary>${signalSources}<p>Respiratory sleep summaries: ${report.respiratorySummaries.length} records. These are summaries, not continuous breathing traces.</p>${report.respiratorySummaries.map((s) => `<p>${s.providerDate} · ${escape(s.sampledAt)} · ${s.breathsPerMinute ?? "Unavailable"} breaths/min</p>`).join("")}<p>Temperature baselines, quality fields, and complete provider records are retained in exports.</p></details></section></aside></div>`;
+export function renderSleepReport(report) {
+  const { date, session, assessment: a } = report;
+  const recorded = report.dates ?? [];
+  const previous = recorded.find(d => d < date), next = [...recorded].reverse().find(d => d > date);
+  const header = `<div class="sleep-heading"><div><p class="view-kicker" data-sleep-kicker>Your night, in focus</p><h1 data-sleep-page-title>${date ? dateLabel(date) : 'Your sleep'}</h1><p data-sleep-heading-copy>Time asleep. What changed. What the data supports.</p></div><div class="sleep-date-controls"><button class="button button-secondary" data-sleep-browse data-sleep-date="${previous ?? ''}" ${previous ? '' : 'disabled'}>‹ Previous night</button><label><span>Wake date</span><input type="date" data-sleep-calendar value="${date ?? ''}" ${recorded[0] ? `max="${recorded[0]}"` : ''}/></label><button class="button button-secondary" data-sleep-browse data-sleep-date="${next ?? ''}" ${next ? '' : 'disabled'}>Next night ›</button><button class="button button-secondary" data-sleep-latest ${!recorded.length || date === recorded[0] ? 'disabled' : ''}>Latest recorded night</button></div></div>`;
+  const awaitingRecords = date ? '' : '<h2>No sleep history yet</h2><p class="sleep-meta">Connect and sync your account in Data &amp; settings, or choose a wake date to explore its history.</p>';
+  const analysis = `<div data-sleep-panel="trends" hidden><section data-sleep-trends class="sleep-card">${awaitingRecords}</section><section data-period-comparisons class="sleep-card lens-periods" ${date ? '' : 'hidden'}></section></div><section data-sleep-panel="patterns" hidden><div data-sleep-patterns>${awaitingRecords}</div></section>`;
+  if (!session) return `${header}<section data-sleep-panel="sleep" class="sleep-card lens-empty"><h2>No sleep recorded${date ? ' on this date' : ''}</h2><p>Missing records are not zero sleep. Your history and saved check-ins remain available.</p></section>${analysis}`;
+  const primary = report.mainSessionId === session.id ? 'Main sleep' : session.isNap ? 'Nap' : 'Additional sleep';
+  const stat = (label, value, note) => `<div><dt>${label}</dt><dd>${value}</dd><small>${note}</small></div>`;
+  const stage = key => session.stageSummary?.[key]?.minutes;
+  const stageNote = key => Number.isFinite(stage(key)) && session.minutesAsleep > 0 ? `${Math.round(stage(key) / session.minutesAsleep * 100)}% of time asleep` : 'Stage duration unavailable';
+  const signals = Object.entries(report.physiology).map(([key,m]) => sourceSelect(key,m)).join('');
+  return `${header}<div data-sleep-panel="sleep"><div class="sleep-session-row"><label>Session<select data-sleep-session>${report.sessions.map(s => `<option value="${s.id}" ${s.id === session.id ? 'selected' : ''}>${s.id === report.mainSessionId ? 'Main sleep' : s.isNap ? 'Nap' : 'Additional sleep'} · ${sleepDuration(s.minutesAsleep)} · ${recordedTime(s.startTime,s.startOffsetSeconds,report.timezone)}–${recordedTime(s.endTime,s.endOffsetSeconds,report.timezone)}</option>`).join('')}</select></label><span class="sleep-meta">${a.provisional ? 'Provisional · ' : ''}Recorded local time · ${primary}</span></div>
+  <section class="lens-night-summary" aria-label="Night summary"><div class="lens-night-assessment">${renderSleepAssessment(a)}</div><dl>${stat('Time asleep',sleepDuration(session.minutesAsleep),`${sleepDuration(session.durationMinutes)} recorded`)}${stat('Sleep efficiency',measurementLabel(a.metrics.efficiency),'Asleep ÷ recorded period')}${stat('Deep sleep',sleepDuration(stage('deep')),stageNote('deep'))}${stat('REM sleep',sleepDuration(stage('rem')),stageNote('rem'))}</dl></section>
+  ${timelineMarkup(report)}
+  <section class="lens-measurements"><div class="sleep-section-heading"><h2>A little more context</h2><p class="sleep-meta">Daily summaries for ${date}; separate from the overnight readings.</p></div><dl>${['hrv','breathing','temperature','spo2'].map(key => stat(a.metrics[key].label,measurementLabel(a.metrics[key]),'Provider-date summary')).join('')}${stat('Time to fall asleep',sleepDuration(session.timeToSleepMinutes),'Selected session')}</dl></section>
+  <details class="lens-checkin" data-sleep-checkin-disclosure><summary data-checkin-label><span><strong>How did it feel?</strong><small>Add restfulness and anything unusual to put the numbers in context.</small></span><span class="lens-checkin-action">Add check-in</span></summary><div data-sleep-check-in-container>${report.checkInDate ? 'Loading your optional check-in…' : 'Available when a main sleep is recorded for this wake date.'}</div></details>
+  <div class="lens-night-tools"><details class="sleep-goal"><summary>Sleep goal · ${sleepDuration(report.preferences.goalMinutes)}</summary><form data-sleep-goal><label>Chosen goal in minutes<input name="goalMinutes" type="number" min="60" max="1440" step="1" value="${report.preferences.goalMinutes}" required/></label><button class="button button-secondary" type="submit">Update goal</button></form><p>Your chosen goal is separate from your recent baseline. Naps do not count towards the main-sleep goal.</p></details><details class="sleep-data-status"><summary>${a.notes.length ? 'Some data unavailable' : 'Sources & data details'}</summary><p>Newest measurement: ${escape(report.newestMeasurementAt)}. Sleep processing: ${session.processed === true ? 'complete' : session.processed === false ? 'pending' : 'not provided'}. Stages: ${escape(session.metadata.stagesStatus ?? 'status not provided')}.</p>${signals}${Object.entries(report.availability).map(([key,v]) => `<p><strong>${escape(key)}</strong>: ${v.permissionDenied ? 'permission denied' : escape(v.lastAttemptStatus)} · ${escape(v.observationState ?? 'not loaded')}${v.fetchComplete ? ' · completed fetch' : ''}<br/>Last successful fetch: ${escape(v.lastSuccessfulFetchAt ?? 'not recorded')}. ${escape(v.reliability)}</p>`).join('')}<p>Missing measurements do not establish normal physiology or device support. Complete provider records remain in exports.</p>${report.respiratorySummaries.map(v => `<p>${v.providerDate} · ${escape(v.sampledAt)} · ${v.breathsPerMinute ?? 'Unavailable'} breaths/min</p>`).join('')}</details></div>
+  <details class="lens-evidence"><summary>What supports this assessment?</summary><p class="sleep-meta">Recent range = the previous 28 calendar days, excluding this night. At least 14 usable nights per measurement. Historical comparisons, not clinical reference intervals.</p><p class="sleep-meta">${sleepDuration(session.minutesAwake)} awake · ${sleepDuration(report.totalSleep.minutesAsleep)} total including naps.${report.totalSleep.reason ? ` Combined total unavailable: ${escape(report.totalSleep.reason)}.` : ''}</p><div class="sleep-indicators">${a.indicators.map(i => `<a href="#sleep-indicator-${i.key}" data-indicator="${i.key}"><span>${i.label}</span><strong>${i.metrics.every(k=>a.metrics[k].assessable) ? 'View comparison' : 'Partial data'}</strong></a>`).join('')}</div>${a.indicators.map(i => `<div id="sleep-indicator-${i.key}" class="sleep-indicator-detail"><h3>${i.label}</h3>${i.metrics.map(key=>evidence(a.metrics[key],key)).join('')}</div>`).join('')}</details></div>${analysis}`;
 }
 export function cursorReading(report, milliseconds) {
   const t = report.tracks,
@@ -364,6 +352,7 @@ function trendsMarkup(data, period, key, ratings = []) {
   return `<div class="sleep-section-heading"><div><p class="view-kicker">Your personal trends</p><h2>How nights compare</h2></div><div class="sleep-trend-controls">${[
     ["7", "7 days"],
     ["30", "30 days"],
+    ["90", "90 days"],
     ["year", "1 year"],
   ]
     .map(
@@ -372,7 +361,7 @@ function trendsMarkup(data, period, key, ratings = []) {
     )
     .join(
       "",
-    )}</div></div><label class="sleep-trend-select">Measurement<select data-sleep-trend-metric>${metrics.map(([value, label]) => `<option value="${value}" ${key === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><p class="sleep-meta">${isYear ? "Monthly medians with recorded-night counts. Select a month to open a night." : "Daily measurements. Select a date to open its report."}${key === "duration" ? ` Goal: ${sleepDuration(data.preferences.goalMinutes)}. Bars show main sleep; totals including naps are listed below.` : ""}</p><div class="sleep-trend-chart" style="--sleep-columns:${Math.max(rows.length, 1)}">${key === "duration" ? `<div class="sleep-trend-goal" style="bottom:${((data.preferences.goalMinutes - minimum) / span) * 100}%"><span>Goal</span></div>` : ""}${rows.map((r) => `<button class="sleep-trend-column" ${isYear ? `data-sleep-month="${r.date}"` : `data-sleep-date="${r.date}"`} title="${r.date}: ${measurementLabel(r.metric ?? {}, r.value)}${r.rating ? `; ${rested[r.rating - 1]}` : ""}" aria-label="${r.date}, ${measurementLabel(r.metric ?? {}, r.value)}"><span class="sleep-trend-bar ${r.value === null ? "is-missing" : ""}" style="height:${r.value === null ? 0 : Math.max(2, ((plot(r.value) - minimum) / span) * 100)}%"></span><span class="sleep-trend-tick">${isYear ? r.date.slice(5) : r.date.slice(8)}</span>${r.rating ? '<i class="sleep-rating-dot" aria-label="Check-in recorded"></i>' : ""}</button>`).join("")}</div><div data-sleep-month-dates></div><details class="sleep-trend-table"><summary>Values, totals &amp; recorded-night counts</summary><div class="sleep-table-scroll"><table><thead><tr><th>${isYear ? "Month" : "Date"}</th><th>${metrics.find((m) => m[0] === key)?.[1]}</th><th>${isYear ? "Usable / recorded nights" : "Total sleep + naps"}</th><th>${isYear ? "Median total + naps" : "Restfulness"}</th></tr></thead><tbody>${rows.map((r) => `<tr><td><button class="sleep-text-button" ${isYear ? `data-sleep-month="${r.date}"` : `data-sleep-date="${r.date}"`}>${r.date}</button></td><td>${measurementLabel(r.metric ?? {}, r.value)}</td><td>${isYear ? `${r.count} / ${r.recorded}` : sleepDuration(r.total)}</td><td>${isYear ? sleepDuration(r.total) : r.rating ? rested[r.rating - 1] : "Unanswered"}</td></tr>`).join("")}</tbody></table></div></details>`;
+    )}</div></div><label class="sleep-trend-select">Measurement<select data-sleep-trend-metric>${metrics.map(([value, label]) => `<option value="${value}" ${key === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><p class="sleep-meta">${isYear ? "Monthly medians with recorded-night counts. Select a month to open a night." : "Daily measurements. Select a date to open its report."}${key === "duration" ? ` Goal: ${sleepDuration(data.preferences.goalMinutes)}. Bars show main sleep; totals including naps are listed below.` : ""}</p><div class="sleep-trend-chart" style="--sleep-columns:${Math.max(rows.length, 1)}">${[0, 0.5, 1].map(f => `<div class="lens-trend-grid" style="bottom:${f * 100}%"><span>${measurementLabel(rows.find(r => r.metric?.unit)?.metric ?? {}, clock ? minimum + span * f : maximum * f)}</span></div>`).join('')}${key === "duration" ? `<div class="sleep-trend-goal" style="bottom:${((data.preferences.goalMinutes - minimum) / span) * 100}%"><span>Goal</span></div>` : ""}${rows.map((r, index) => `<button class="sleep-trend-column" ${isYear ? `data-sleep-month="${r.date}"` : `data-sleep-date="${r.date}"`} title="${r.date}: ${measurementLabel(r.metric ?? {}, r.value)}${r.rating ? `; ${rested[r.rating - 1]}` : ""}" aria-label="${r.date}, ${measurementLabel(r.metric ?? {}, r.value)}"><span class="sleep-trend-bar ${r.value === null ? "is-missing" : ""}" style="height:${r.value === null ? 0 : Math.max(2, ((plot(r.value) - minimum) / span) * 100)}%"></span>${index % Math.ceil(rows.length / 7) === 0 || index === rows.length - 1 ? `<span class="sleep-trend-tick">${isYear ? r.date.slice(5) : r.date.slice(5).replace('-', '/')}</span>` : ''}${r.rating ? '<i class="sleep-rating-dot" aria-label="Check-in recorded"></i>' : ""}</button>`).join("")}</div><div data-sleep-month-dates></div><details class="sleep-trend-table"><summary>Values, totals &amp; recorded-night counts</summary><div class="sleep-table-scroll"><table><thead><tr><th>${isYear ? "Month" : "Date"}</th><th>${metrics.find((m) => m[0] === key)?.[1]}</th><th>${isYear ? "Usable / recorded nights" : "Total sleep + naps"}</th><th>${isYear ? "Median total + naps" : "Restfulness"}</th></tr></thead><tbody>${rows.map((r) => `<tr><td><button class="sleep-text-button" ${isYear ? `data-sleep-month="${r.date}"` : `data-sleep-date="${r.date}"`}>${r.date}</button></td><td>${measurementLabel(r.metric ?? {}, r.value)}</td><td>${isYear ? `${r.count} / ${r.recorded}` : sleepDuration(r.total)}</td><td>${isYear ? sleepDuration(r.total) : r.rating ? rested[r.rating - 1] : "Unanswered"}</td></tr>`).join("")}</tbody></table></div></details>`;
 }
 export function createSleepWorkspace({
   root,
@@ -382,16 +371,32 @@ export function createSleepWorkspace({
   notify,
 }) {
   const patterns = createSleepPatterns({ root, fetchJson, notify });
+  let mode = "sleep";
   let report = null,
     version = 0,
     trendVersion = 0,
-    period = "7",
+    period = "30",
     metric = "duration",
     trendData = null,
     ratings = [],
     selection = {},
     entry = null;
   const fail = (error) => notify(error.message);
+  function setMode(next) {
+    mode = ['sleep','trends','patterns'].includes(next) ? next : 'sleep';
+    root.dataset.lensMode = mode;
+    for (const panel of root.querySelectorAll('[data-sleep-panel]')) panel.hidden = panel.dataset.sleepPanel !== mode;
+    const title = root.querySelector('[data-sleep-page-title]');
+    if (title) title.textContent = mode === 'sleep' ? (report?.date ? dateLabel(report.date) : 'Your sleep') : mode === 'trends' ? 'Your sleep, over time' : 'Patterns in your sleep';
+    const copy = root.querySelector('[data-sleep-heading-copy]');
+    if (copy) copy.textContent = mode === 'sleep' ? 'Time asleep. What changed. What the data supports.' : mode === 'trends' ? 'Look past a single night. Follow the changes across your history.' : 'Explore what changes alongside your sleep.';
+    const kicker = root.querySelector('[data-sleep-kicker]');
+    if (kicker) kicker.textContent = mode === 'sleep' ? 'Your night, in focus' : mode === 'trends' ? 'The longer view' : 'Put your nights in context';
+  }
+  function updateCheckInLabel() {
+    const label = root.querySelector('[data-checkin-label]');
+    if (label) label.innerHTML = `<span><strong>${entry ? 'Your morning check-in' : 'How did it feel?'}</strong><small>${entry ? `${entry.restfulness ? rested[entry.restfulness-1] : 'Restfulness unanswered'} · ${entry.context?.length ? escape(entry.context.join(', ')) : entry.contextReviewed ? 'No unusual factors' : 'Factors not reviewed'}` : 'Add restfulness and anything unusual to put the numbers in context.'}</small></span><span class="lens-checkin-action">${entry ? 'Edit check-in' : 'Add check-in'}</span>`;
+  }
   async function loadTrends(token) {
     if (!report?.date) return;
     const requestVersion = ++trendVersion;
@@ -436,7 +441,8 @@ export function createSleepWorkspace({
         date: report.date,
         sessionId: report.session?.id ?? null,
       };
-      root.innerHTML = reportMarkup(report);
+      root.innerHTML = renderSleepReport(report);
+      setMode(mode);
       onResolved(report);
       bindTimeline(root, report);
       const checkIn = root.querySelector("[data-sleep-check-in-container]");
@@ -446,6 +452,7 @@ export function createSleepWorkspace({
               .then((value) => {
                 if (token !== version) return;
                 entry = value;
+                updateCheckInLabel();
                 checkIn.innerHTML = checkInMarkup(report.checkInDate, entry);
               })
               .catch(() => {
@@ -470,7 +477,7 @@ export function createSleepWorkspace({
           ? `#sleep-evidence-${target.dataset.evidence}`
           : `#sleep-indicator-${target.dataset.indicator}`,
       );
-      if (node?.tagName === "DETAILS") node.open = true;
+      for (let parent = node; parent && parent !== root; parent = parent.parentElement) if (parent.tagName === "DETAILS") parent.open = true;
       node?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -479,13 +486,14 @@ export function createSleepWorkspace({
         ...selection,
         date: target.dataset.sleepDate,
         sessionId: null,
-      });
+      }, target.hasAttribute("data-sleep-browse") ? mode : "sleep");
     if (target.hasAttribute("data-sleep-latest"))
-      navigate({ ...selection, date: null, sessionId: null });
+      navigate({ ...selection, date: null, sessionId: null }, mode);
     if (target.dataset.sleepPeriod) {
       period = target.dataset.sleepPeriod;
-      await loadTrends(version);
+      await Promise.all([loadTrends(version), ...(period === "year" ? [] : [patterns.setDays(Number(period))])]);
     }
+    if (target.dataset.patternDays) { period = target.dataset.patternDays; await loadTrends(version); }
     if (target.dataset.sleepMonth) {
       const month = trendData?.months.find(
         (m) => m.month === target.dataset.sleepMonth,
@@ -508,6 +516,7 @@ export function createSleepWorkspace({
         });
         if (token !== version) return;
         entry = null;
+        updateCheckInLabel();
         root.querySelector("[data-sleep-check-in-container]").innerHTML =
           checkInMarkup(report.checkInDate, null);
         notify("Check-in deleted.");
@@ -526,7 +535,7 @@ export function createSleepWorkspace({
       if (none) none.checked = false;
     }
     if (target.hasAttribute("data-sleep-calendar") && target.value)
-      navigate({ ...selection, date: target.value, sessionId: null });
+      navigate({ ...selection, date: target.value, sessionId: null }, mode);
     if (target.hasAttribute("data-sleep-session"))
       navigate({ ...selection, date: report.date, sessionId: target.value });
     if (target.hasAttribute("data-sleep-source")) {
@@ -538,7 +547,7 @@ export function createSleepWorkspace({
         date: report.date,
         sessionId: report.session?.id ?? null,
         sources,
-      });
+      }, mode);
     }
     if (target.hasAttribute("data-sleep-trend-metric")) {
       metric = target.value;
@@ -600,6 +609,8 @@ export function createSleepWorkspace({
         });
         if (token !== version) return;
         entry = saved;
+        updateCheckInLabel();
+        root.querySelector("[data-sleep-checkin-disclosure]").open = false;
         root.querySelector("[data-sleep-check-in-container]").innerHTML =
           checkInMarkup(report.checkInDate, entry);
         notify("Check-in saved.");
@@ -613,6 +624,8 @@ export function createSleepWorkspace({
   });
   return {
     load,
+    setMode,
+    openCheckIn() { const panel = root.querySelector("[data-sleep-checkin-disclosure]"); if (panel) { panel.open = true; panel.scrollIntoView({ block: "center" }); } },
     cancel() {
       version++;
       patterns.cancel();

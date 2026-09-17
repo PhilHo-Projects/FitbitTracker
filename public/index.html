@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0b0e14" />
-    <title>Personal Health Data Hub</title>
+    <title>Sleep Lens — Your sleep, in focus</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/sleep.css" />
+    <link rel="stylesheet" href="/sleep-lens.css" />
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23b9dc8c' d='M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z'/></svg>"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23b9dc8c' d='M21 16a10 10 0 0 1-13-13 10 10 0 1 0 13 13Z'/></svg>"
     />
   </head>
   <body class="app-body">
@@ -21,25 +22,24 @@
       <div class="header-inner">
         <a class="brand" href="/" data-nav="sleep" aria-label="Open Sleep">
           <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path d="M12 20.5S4.5 16 4.5 10.2A4.2 4.2 0 0 1 12 7.6a4.2 4.2 0 0 1 7.5 2.6C19.5 16 12 20.5 12 20.5Z" fill="currentColor"/>
-              <path d="m7.8 12.2 2.1-2 2.1 3.7 2-4.1 2.2 2.4h2.1" stroke="#18220e" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M25.8 20.4A12 12 0 0 1 11.6 6.2 11.5 11.5 0 1 0 25.8 20.4Z" fill="currentColor"/><circle cx="24" cy="8" r="2" fill="currentColor"/></svg>
           </span>
           <span>
-            <strong>Health Hub</strong>
-            <small>Private archive</small>
+            <strong>Sleep Lens</strong>
+            <small>Your sleep, in focus</small>
           </span>
         </a>
 
-        <nav class="main-nav" aria-label="Health workspaces">
-          <button class="nav-item is-active" type="button" data-nav="sleep">Sleep</button>
-          <button class="nav-item" type="button" data-nav="today">Today</button>
+        <nav class="main-nav" aria-label="Sleep workspaces">
+          <button class="nav-item is-active" type="button" data-nav="sleep">Night</button>
+          <button class="nav-item" type="button" data-nav="trends">Trends</button>
+          <button class="nav-item" type="button" data-nav="patterns">Patterns</button>
           <button class="nav-item" type="button" data-nav="journal">Journal</button>
-          <button class="nav-item" type="button" data-nav="more">More</button>
+
         </nav>
 
         <div class="header-actions">
+          <button class="nav-item lens-data-nav" type="button" data-nav="more">Data &amp; settings</button>
           <span id="syncStatus" class="sync-status" data-state="loading" role="status" aria-live="polite">
             <i aria-hidden="true"></i>
             <span>Checking sync status</span>
@@ -161,12 +161,13 @@
       </section>
 
       <section id="view-more" class="app-view" data-view="more" hidden>
-        <div class="workspace-heading"><div><p class="view-kicker">Health Hub</p><h1>More</h1></div></div>
-        <div class="more-status" aria-label="Health Hub status">
+        <div class="workspace-heading"><div><p class="view-kicker">Sleep Lens</p><h1>Data &amp; settings</h1><p>Connections, exports, and the records behind your sleep.</p></div></div>
+        <div class="more-status" aria-label="Sleep Lens status">
           <p><span>Synchronization</span><strong id="moreSyncStatus">Checking…</strong></p>
           <p><span>Storage</span><strong id="moreOperationsStatus">Open Settings for details</strong></p>
         </div>
         <div class="more-workspaces">
+          <button class="more-workspace-card" type="button" data-nav="today" data-more-view="today"><strong>Daily overview</strong><span>The full-day summary of activity, heart rate, and sleep.</span></button>
           <button class="more-workspace-card" type="button" data-nav="heart" data-more-view="heart"><strong>Heart</strong><span>Resting rate, daily range, coverage, and longer trends.</span></button>
           <button class="more-workspace-card" type="button" data-nav="oxygen" data-more-view="oxygen"><strong>Blood oxygen · SpO₂</strong><span>Overnight readings, daily estimates, sources, and fetch coverage.</span></button>
           <button class="more-workspace-card" type="button" data-nav="calories" data-more-view="calories"><strong>Calories</strong><span>Total expenditure with active and basal energy kept separate.</span></button>
@@ -203,7 +204,7 @@
           <label><span class="sr-only">Blood oxygen date</span><input id="oxygenDate" type="date" required /></label>
           <button id="oxygenNext" class="button button-secondary" type="button" aria-label="Next oxygen date">→</button>
           <button id="oxygenToday" class="button button-secondary" type="button">Today</button>
-          <button class="button button-secondary" type="button" data-nav="sleep">Sleep</button>
+          <button class="button button-secondary" type="button" data-nav="sleep">Night</button>
           <button class="button button-secondary" type="button" data-nav="journal">Journal</button>
           <button id="oxygenExport" class="button button-secondary" type="button">Export</button>
         </div>
@@ -226,8 +227,10 @@
 
       <section id="view-journal" class="app-view" data-view="journal" hidden>
         <div class="workspace-heading">
-          <div><p class="view-kicker">Daily context</p><h1>Journal</h1><p>Private encrypted notes that explain what the sensors cannot.</p></div>
+          <div><p class="view-kicker">Your side of the story</p><h1>Journal &amp; check-ins</h1><p>Morning ratings and selected factors inform Patterns. Personal notes stay out of those comparisons.</p></div>
         </div>
+        <section class="lens-journal-checkins"><h2>Recent morning check-ins</h2><p class="sleep-meta">The last 30 days ending on your selected wake date.</p><div id="journalCheckIns"></div></section>
+        <h2 class="lens-journal-notes-title">Personal notes</h2>
         <div class="journal-layout">
           <form id="journalForm" class="journal-form">
             <input id="journalEntryId" type="hidden" />
@@ -341,7 +344,7 @@
         </section>
       </section>
     </main>
-    <nav class="mobile-nav" aria-label="Mobile workspaces"><button class="nav-item" data-nav="sleep">Sleep</button><button class="nav-item" data-nav="today">Today</button><button class="nav-item" data-nav="journal">Journal</button><button class="nav-item" data-nav="more">More</button></nav>
+    <nav class="mobile-nav" aria-label="Mobile workspaces"><button class="nav-item" data-nav="sleep">Night</button><button class="nav-item" data-nav="trends">Trends</button><button class="nav-item" data-nav="patterns">Patterns</button><button class="nav-item" data-nav="journal">Journal</button></nav>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/app.js"></script>

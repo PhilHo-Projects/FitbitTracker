@@ -11,7 +11,7 @@ function setBusy(busy) {
   email.disabled = busy;
   password.disabled = busy;
   spinner.hidden = !busy;
-  label.textContent = busy ? 'Signing in…' : 'Open dashboard';
+  label.textContent = busy ? 'Signing in…' : 'Open Sleep Lens';
 }
 
 form.addEventListener('submit', async (event) => {
