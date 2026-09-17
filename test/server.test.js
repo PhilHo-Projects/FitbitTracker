@@ -42,6 +42,25 @@ test('redirects an unauthenticated dashboard request to login', async () => {
   });
 });
 
+test('serves the synthetic public demo without authentication', async () => {
+  await withServer(globalThis.fetch, async (baseUrl) => {
+    const [response, scriptResponse, styleResponse] = await Promise.all([
+      fetch(`${baseUrl}/demo`),
+      fetch(`${baseUrl}/demo-assets/demo.js`),
+      fetch(`${baseUrl}/demo-assets/styles.css`),
+    ]);
+    const [html, script] = await Promise.all([response.text(), scriptResponse.text()]);
+
+    assert.equal(response.status, 200);
+    assert.equal(scriptResponse.status, 200);
+    assert.equal(styleResponse.status, 200);
+    assert.match(html, /Sleep Tracker/);
+    assert.match(html, /Public demo · synthetic data/);
+    assert.doesNotMatch(script, /\bfetch\s*\(|\/api\//);
+    assert.match(response.headers.get('content-security-policy') ?? '', /default-src 'self'/);
+  });
+});
+
 test('rejects an invalid password', async () => {
   await withServer(globalThis.fetch, async (baseUrl) => {
     const response = await signIn(baseUrl, { password: 'wrong-password-entirely' });

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0b0e14" />
-    <title>Sign in — Sleep Lens</title>
+    <title>Sleep Tracker</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/sleep-lens.css" />
     <link
@@ -19,30 +19,16 @@
         <span class="brand-mark brand-mark-large" aria-hidden="true">
           <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M25.8 20.4A12 12 0 0 1 11.6 6.2 11.5 11.5 0 1 0 25.8 20.4Z" fill="currentColor"/><circle cx="24" cy="8" r="2" fill="currentColor"/></svg>
         </span>
-        <p class="eyebrow">Sleep Lens · Private sleep analysis</p>
-        <h1 id="loginHeading">See your nights<br/>in a <span>new light.</span></h1>
+        <h1 id="loginHeading">Sleep Tracker</h1>
         <p>
           Understand your nights, follow your sleep trends, and explore what changes alongside them.
         </p>
-        <div class="login-privacy">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12v10H6V10Z"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <span>Your sleep history and personal context, together in one private place.</span>
-        </div>
-        <div class="lens-welcome-points"><p><strong>Start with a night.</strong> Sleep stages and overnight measurements share one timeline.</p><p><strong>Step back for the pattern.</strong> See how duration, timing, and physiology change.</p><p><strong>Bring your own context.</strong> Optional check-ins connect how you felt with what was recorded.</p></div>
+        <a class="login-demo-link" href="/demo">View public demo <span aria-hidden="true">↗</span></a>
       </section>
 
       <section class="login-card">
         <div>
-          <p class="eyebrow">Welcome back</p>
-          <h2>Sign in to Sleep Lens</h2>
-          <p>Sign in to explore your nights and the patterns over time.</p>
+          <h2>Private sign in</h2>
         </div>
 
         <form id="loginForm" class="login-form">
@@ -66,7 +52,7 @@
           <p id="loginError" class="form-error" role="alert" hidden></p>
           <button id="loginButton" class="primary-button primary-button-wide" type="submit">
             <span id="loginSpinner" class="button-spinner" hidden aria-hidden="true"></span>
-            <span id="loginLabel">Open Sleep Lens</span>
+            <span id="loginLabel">Open Sleep Tracker</span>
           </button>
         </form>
       </section>

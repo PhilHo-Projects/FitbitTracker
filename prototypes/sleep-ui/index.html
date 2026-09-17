@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0f14">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Sleep Tracker · Public demo</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23bedb98'/%3E%3Ccircle cx='22' cy='10' r='12' fill='%230b0f14'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/demo-assets/styles.css">
+  <script src="/demo-assets/demo.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="prototype-bar">
+    <div class="prototype-inner">
+      <span class="prototype-label"><span class="sample-dot"></span>Public demo · synthetic data</span>
+      <span class="prototype-note">Nothing here connects to an account.</span>
+      <a class="text-button landing-link" href="/login">Private sign in <span aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="brand" data-page="night" aria-label="Sleep Tracker — open Night">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M25.8 20.4A12 12 0 0 1 11.6 6.2 11.5 11.5 0 1 0 25.8 20.4Z" fill="currentColor"/><circle cx="24" cy="8" r="2" fill="currentColor"/></svg>
+        <span>Sleep <strong>Tracker</strong></span>
+      </button>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button data-page="night">Night</button><button data-page="trends">Trends</button><button data-page="patterns">Patterns</button>
+      </nav>
+      <div class="header-utilities"><span class="private-label">Synthetic showcase</span><a class="utility-button" href="/login"><span>Private sign in</span></a></div>
+    </div>
+  </header>
+  <main id="main" tabindex="-1"></main>
+  <footer class="app-footer"><span>Sleep Tracker <span aria-hidden="true">·</span> Public demo</span><span>Synthetic data. No account or API connection.</span></footer>
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>

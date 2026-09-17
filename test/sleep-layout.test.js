@@ -11,6 +11,37 @@ async function sources() {
   return { html, app, css };
 }
 
+async function publicSurfaces() {
+  const [login, dashboard, demo, demoScript] = await Promise.all([
+    readFile(new URL('../public/login.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../prototypes/sleep-ui/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../prototypes/sleep-ui/demo.js', import.meta.url), 'utf8'),
+  ]);
+  return { login, dashboard, demo, demoScript };
+}
+
+test('Sleep Tracker uses a concise landing page with a public demo entry point', async () => {
+  const { login, dashboard } = await publicSurfaces();
+
+  assert.match(login, /<h1 id="loginHeading">Sleep Tracker<\/h1>/);
+  assert.match(login, /Understand your nights, follow your sleep trends, and explore what changes alongside them\./);
+  assert.match(login, /href="\/demo"/);
+  assert.doesNotMatch(login, /See your nights|lens-welcome-points|login-privacy/);
+  assert.match(dashboard, /<strong>Sleep Tracker<\/strong>/);
+  assert.doesNotMatch(dashboard, /Sleep Lens/);
+});
+
+test('the public demo is synthetic and cannot call private APIs', async () => {
+  const { demo, demoScript } = await publicSurfaces();
+
+  assert.match(demo, /Public demo · synthetic data/);
+  assert.match(demo, /href="\/login"/);
+  assert.doesNotMatch(demo, /data-page="journal"|data-page="settings"|data-layout=/);
+  assert.doesNotMatch(demoScript, /\bfetch\s*\(|\/api\//);
+  assert.match(demoScript, /Editing is not available in the public demo/);
+});
+
 test('localhost has a hidden-by-default development banner initialized from its hostname', async () => {
   const { html, app, css } = await sources();
 

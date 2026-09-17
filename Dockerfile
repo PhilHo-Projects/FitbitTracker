@@ -17,6 +17,7 @@ RUN apt-get update \
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/public ./public
+COPY --from=build /app/prototypes/sleep-ui ./prototypes/sleep-ui
 COPY --from=build /app/lib ./lib
 COPY --from=build /app/db ./db
 COPY --from=build /app/scripts ./scripts

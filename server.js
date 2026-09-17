@@ -89,6 +89,7 @@ export function createApp(options = {}) {
   const sleepCheckIns = pool && env.JOURNAL_ENCRYPTION_KEYS
     ? createSleepCheckInRepository(pool, createJournalCipher(env.JOURNAL_ENCRYPTION_KEYS)) : null;
   const publicDir = path.join(__dirname, 'public');
+  const demoDir = path.join(__dirname, 'prototypes', 'sleep-ui');
   const webhookUrl = env.N8N_WEBHOOK_URL || '';
   const webhookToken = env.N8N_WEBHOOK_TOKEN || '';
 
@@ -146,6 +147,11 @@ export function createApp(options = {}) {
       return next(error);
     }
   });
+
+  app.get('/demo', (_req, res) => {
+    res.sendFile(path.join(demoDir, 'index.html'));
+  });
+  app.use('/demo-assets', express.static(demoDir, { index: false, maxAge: 0 }));
 
   app.get(['/', '/index.html', '/settings'], requireAuth, (_req, res) => {
     res.sendFile(path.join(publicDir, 'index.html'));
