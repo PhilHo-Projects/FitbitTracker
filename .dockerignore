@@ -1,4 +1,7 @@
 node_modules
+.worktrees
+.superpowers
+.playwright-cli
 .runtime
 output
 TIMELINE.md
