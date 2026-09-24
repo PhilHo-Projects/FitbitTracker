@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Private Google Health archive for sleep, heart rate, calories, journal context, and exports.",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "build": "tailwindcss -i ./src/input.css -o ./public/styles.css --minify",
     "build:workflow": "node scripts/build-n8n-workflow.mjs",

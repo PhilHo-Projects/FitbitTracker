@@ -121,7 +121,7 @@ PostgreSQL
 
 ## Local development
 
-Requirements: Node.js 20+ and Docker Desktop.
+Requirements: Node.js 24 LTS and Docker Desktop.
 
 ```bash
 npm install
@@ -513,7 +513,7 @@ The production Docker image:
 2. Builds Tailwind.
 3. Applies pending migrations before server startup.
 4. Exposes port 3000.
-5. Uses `/healthz` for the Docker health check and `/readyz` for migration/database readiness.
+5. Uses `/readyz` for the Docker health check and migration/database readiness.
 
 For Coolify:
 
