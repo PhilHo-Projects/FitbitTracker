@@ -177,7 +177,7 @@ function updateDateControls() {
   $('#nextDate').disabled = state.selectedDate >= today;
   $('#todayButton').disabled = state.selectedDate === today;
   $('#todayHeading').textContent = selectedDayLabel();
-  $('#todaySubheading').textContent = `${formatDate(state.selectedDate, { year: true })} · what happened across sleep, heart, calories, and context.`;
+  $('#todaySubheading').textContent = `${formatDate(state.selectedDate, { year: true })} · Sleep, heart rate, and activity.`;
   $('#exportStart').value ||= shiftDate(state.selectedDate, -29);
   $('#exportEnd').value ||= shiftDate(state.selectedDate, 1);
 }
@@ -405,7 +405,7 @@ function renderJournalList(entries) {
           </article>`,
         )
         .join('')
-    : '<p class="empty-copy">No context recorded for this date.</p>';
+    : '<p class="empty-copy">No journal entry for this date.</p>';
 }
 
 let journalVersion = 0;
@@ -421,7 +421,7 @@ async function loadJournal() {
   if (notes.status === 'fulfilled') renderJournalList(notes.value);
   else $('#journalList').innerHTML = `<p class="empty-copy error-copy">${escapeHtml(notes.reason.message)}</p>`;
   if (checkins.status === 'rejected') $('#journalCheckIns').innerHTML = '<p class="sleep-meta">Morning check-ins are unavailable. Your journal remains available.</p>';
-  else $('#journalCheckIns').innerHTML = checkins.value.length ? [...checkins.value].reverse().map(e => `<article class="lens-journal-checkin"><time>${formatDate(e.date,{short:true,compact:true})}</time><div><strong>${['Very tired','Somewhat tired','Okay','Rested','Very rested'][e.restfulness-1] ?? 'Not rated'}</strong><span>${e.context?.length ? escapeHtml(e.context.join(', ')) : e.contextReviewed ? 'No unusual factors' : 'Factors not reviewed'}</span>${e.note ? `<p>${escapeHtml(e.note)}</p>` : ''}</div><button class="button button-secondary" data-open-checkin="${e.date}">View / edit</button></article>`).join('') : '<p class="sleep-meta">No check-ins in the last 30 days. Add one from your nightly report.</p>';
+  else $('#journalCheckIns').innerHTML = checkins.value.length ? [...checkins.value].reverse().map(e => `<article class="lens-journal-checkin"><time>${formatDate(e.date,{short:true,compact:true})}</time><div><strong>${['Very tired','Somewhat tired','Okay','Rested','Very rested'][e.restfulness-1] ?? 'Not rated'}</strong><span>${e.context?.length ? escapeHtml(e.context.join(', ')) : e.contextReviewed ? 'No unusual factors' : 'Factors not reviewed'}</span>${e.note ? `<p>${escapeHtml(e.note)}</p>` : ''}</div><button class="button button-secondary" data-open-checkin="${e.date}">View / edit</button></article>`).join('') : '<p class="sleep-meta">No check-ins in the last 30 days. Add a check-in in Night.</p>';
 }
 $('#journalCheckIns').addEventListener('click', async event => {
   const button = event.target.closest('[data-open-checkin]');

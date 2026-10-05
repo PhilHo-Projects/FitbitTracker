@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0b0e14" />
-    <title>Sleep Tracker — Your sleep, in focus</title>
+    <title>Sleep Tracker</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/sleep.css" />
     <link rel="stylesheet" href="/sleep-lens.css" />
@@ -26,7 +26,6 @@
           </span>
           <span>
             <strong>Sleep Tracker</strong>
-            <small>Your sleep, in focus</small>
           </span>
         </a>
 
@@ -63,7 +62,7 @@
           <div>
             <p class="view-kicker">Daily record</p>
             <h1 id="todayHeading">Today</h1>
-            <p id="todaySubheading">What happened across sleep, heart, calories, and context.</p>
+            <p id="todaySubheading">Sleep, heart rate, and activity.</p>
           </div>
           <div class="date-browser" aria-label="Browse dates">
             <button id="previousDate" class="icon-button" type="button" aria-label="Previous day">
@@ -145,10 +144,9 @@
           <section id="todayOxygen" class="metric-panel compact-panel interactive-panel" data-open-view="oxygen" tabindex="0" aria-labelledby="oxygenSummaryHeading"><h2 id="oxygenSummaryHeading">SpO₂</h2></section>
           <section class="context-panel" aria-labelledby="contextHeading">
             <div>
-              <span class="metric-name">Context</span>
-              <h2 id="contextHeading">What else mattered?</h2>
+              <h2 id="contextHeading">Context</h2>
               <div id="latestContext" class="context-copy">
-                <p>No journal entry yet. Add exercise, substances, illness, stress, travel, meals, or anything else that gives the numbers meaning.</p>
+                <p>No journal entry for this date.</p>
               </div>
             </div>
             <button id="addContextButton" class="button button-primary" type="button">Add context</button>
@@ -161,7 +159,7 @@
       </section>
 
       <section id="view-more" class="app-view" data-view="more" hidden>
-        <div class="workspace-heading"><div><p class="view-kicker">Sleep Tracker</p><h1>Data &amp; settings</h1><p>Connections, exports, and the records behind your sleep.</p></div></div>
+        <div class="workspace-heading"><div><p class="view-kicker">Sleep Tracker</p><h1>Data &amp; settings</h1><p>Connections, sync, exports, and storage.</p></div></div>
         <div class="more-status" aria-label="Sleep Tracker status">
           <p><span>Synchronization</span><strong id="moreSyncStatus">Checking…</strong></p>
           <p><span>Storage</span><strong id="moreOperationsStatus">Open Settings for details</strong></p>
@@ -178,7 +176,7 @@
 
       <section id="view-heart" class="app-view" data-view="heart" hidden>
         <div class="workspace-heading">
-          <div><p class="view-kicker">Heart workspace</p><h1>Heart rate</h1><p>Resting, range, average, and coverage without misleading interpolation.</p></div>
+          <div><h1>Heart rate</h1><p>Resting, range, average, and coverage without misleading interpolation.</p></div>
           <div class="range-tabs" data-range-tabs="heart">
             <button type="button" data-range="day" class="is-active">Day</button>
             <button type="button" data-range="week">Week</button>
@@ -191,7 +189,7 @@
 
       <section id="view-oxygen" class="app-view" data-view="oxygen" hidden>
         <div class="workspace-heading oxygen-heading">
-          <div><p class="view-kicker">Blood oxygen workspace</p><h1>SpO₂</h1><p>Daily estimates and individual readings in sleep context.</p></div>
+          <div><h1>SpO₂</h1><p>Daily estimates and individual readings in sleep context.</p></div>
           <div class="range-tabs" data-range-tabs="oxygen" aria-label="Blood oxygen period">
             <button type="button" data-range="day" class="is-active" aria-pressed="true">Night</button>
             <button type="button" data-range="week" aria-pressed="false">7 days</button>
@@ -214,7 +212,7 @@
 
       <section id="view-calories" class="app-view" data-view="calories" hidden>
         <div class="workspace-heading">
-          <div><p class="view-kicker">Calories workspace</p><h1>Energy expenditure</h1><p>Total burned stays separate from consumed calories.</p></div>
+          <div><h1>Energy expenditure</h1><p>Total burned stays separate from consumed calories.</p></div>
           <div class="range-tabs" data-range-tabs="calories">
             <button type="button" data-range="day" class="is-active">Day</button>
             <button type="button" data-range="week">Week</button>
@@ -227,7 +225,7 @@
 
       <section id="view-journal" class="app-view" data-view="journal" hidden>
         <div class="workspace-heading">
-          <div><p class="view-kicker">Your side of the story</p><h1>Journal &amp; check-ins</h1><p>Morning ratings and selected factors inform Patterns. Personal notes stay out of those comparisons.</p></div>
+          <div><h1>Journal &amp; check-ins</h1><p>Ratings and tags appear in Patterns. Notes are excluded.</p></div>
         </div>
         <section class="lens-journal-checkins"><h2>Recent morning check-ins</h2><p class="sleep-meta">The last 30 days ending on your selected wake date.</p><div id="journalCheckIns"></div></section>
         <h2 class="lens-journal-notes-title">Personal notes</h2>

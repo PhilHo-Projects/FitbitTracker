@@ -55,6 +55,6 @@ test('Trends and Patterns separate period calculations from reviewed-factor comp
   assert.doesNotMatch(patterns, /PRIVATE NOTE/);
   checkIns[13].contextReviewed = false;
   const insufficient = renderSleepPatterns(buildSleepInsights({ date, days: 30, nights, checkIns }), { view: 'patterns', factor: 'caffeine' });
-  assert.match(insufficient, /More check-ins needed/);
+  assert.match(insufficient, /Insufficient data/);
   assert.doesNotMatch(insufficient.split('<section class="lens-factor-detail">')[1].split('</section>')[0], /\+30 min/);
 });
