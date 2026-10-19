@@ -1,4 +1,4 @@
-/* Nocturne. Fonts are served locally; no third-party requests are needed. */
+/* Nocturne charcoal. Fonts are served locally; no third-party requests are needed. */
 @font-face {
   font-family: "DM Sans";
   font-style: normal;
@@ -17,31 +17,31 @@
   color-scheme: dark;
   --font-body: "DM Sans", "Segoe UI", sans-serif;
   --font-display: "Manrope", "Segoe UI", sans-serif;
-  --page: #211f2c;
-  --surface: #2a2737;
-  --surface-raised: #322e41;
-  --surface-soft: #252230;
-  --border: #423d50;
-  --border-strong: #61586f;
-  --text: #eeeaf5;
-  --muted: #b6afc3;
-  --faint: #a29aac;
-  --accent: #b5a5ee;
-  --accent-hover: #ccbef7;
-  --accent-ink: #252131;
-  --accent-bg: #3b354f;
-  --danger: #f0aaa7;
-  --awake: #e5b492;
-  --light: #858199;
-  --deep: #9988e4;
-  --rem: #c9b2e9;
-  --active: #e5b492;
-  --basal: #858199;
+  --page: #08090b;
+  --surface: #101215;
+  --surface-raised: #191c21;
+  --surface-soft: #0c0e11;
+  --border: #2b3038;
+  --border-strong: #515b68;
+  --text: #e5e8ec;
+  --muted: #a5adb8;
+  --faint: #8f98a4;
+  --accent: #bcc9d5;
+  --accent-hover: #dce5ed;
+  --accent-ink: #10151b;
+  --accent-bg: #1c252e;
+  --danger: #e4a3a3;
+  --awake: #d2aa82;
+  --light: #626a75;
+  --deep: #7394ac;
+  --rem: #b4c7d2;
+  --active: #d2aa82;
+  --basal: #626a75;
   /* Aliases used by the standalone public demo. */
   --raised: var(--surface-raised);
   --hover: var(--accent-bg);
   --line: var(--border);
-  --line-soft: #383344;
+  --line-soft: #22262d;
   --radius: 18px;
   --content: 1280px;
 }
