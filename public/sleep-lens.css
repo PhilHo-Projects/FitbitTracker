@@ -1,40 +1,59 @@
-/* Sleep Tracker: the nightly report uses the whole workspace. */
-.header-inner, .app-main { width: min(1680px, calc(100% - 80px)); }
-.header-inner { min-height: 80px; gap: 38px; }
-.app-main { padding-top: 30px; }
-.brand strong { font-size: 1.15rem; letter-spacing: -.04em; }
+/* Nocturne: one clear nightly summary, with quieter supporting detail. */
+.header-inner, .app-main { width: min(1280px, calc(100% - 80px)); }
+.header-inner { min-height: 82px; gap: 32px; }
+.app-main { padding-top: 34px; }
+.brand strong { font-family: var(--font-display); font-size: 1.05rem; font-weight: 650; letter-spacing: -.04em; }
 .brand small { font-size: .7rem; }
 .brand-mark { background: transparent; }
-.brand-mark svg { width: 29px; height: 29px; }
-.main-nav { gap: 8px; }
-.nav-item { font-size: .86rem; }
+.brand-mark svg { width: 25px; height: 25px; }
+.main-nav { gap: 12px; margin-inline: auto; }
+.nav-item { font-size: .84rem; font-weight: 500; }
+.main-nav .nav-item.is-active { color: var(--text); }
+.main-nav .nav-item.is-active::after { width: 18px; left: calc(50% - 9px); border-radius: 3px; height: 3px; }
+.sleep-card, .metric-panel, .context-panel { border-color: transparent; border-radius: 18px; }
+.sleep-card h2, .workspace-heading h1, .view-heading h1, .login-card h2 { font-family: var(--font-display); font-weight: 550; }
 .lens-data-nav { min-height: 44px; font-weight: 500; }
-.sleep-heading { align-items: end; margin-bottom: 20px; }
-.sleep-heading h1 { font-size: clamp(1.5rem, 2.2vw, 2rem); }
+.sleep-heading { align-items: center; margin-bottom: 18px; }
+.sleep-heading h1 { font-family: var(--font-display); font-weight: 500; font-size: clamp(1.6rem, 2.5vw, 2.05rem); letter-spacing: -.045em; }
 .sleep-date-controls { align-items: end; justify-content: end; }
 .sleep-date-controls > label { display: grid; gap: 6px; color: var(--muted); font-size: .7rem; }
 .sleep-date-controls .button { font-size: .76rem; padding-inline: 13px; }
-.sleep-session-row { margin-bottom: 22px; }
-.lens-night-summary { display: grid; grid-template-columns: minmax(220px, 1.2fr) minmax(0, 3fr); gap: 28px; padding: 24px 0 30px; border-top: 1px solid var(--border); }
-.lens-night-summary dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; margin: 0; }
+.sleep-session-row { margin-bottom: 16px; }
+.sleep-session-row select { background: transparent; border-color: var(--border); font-size: .77rem; }
+.lens-night-summary { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(0, 1.3fr); align-items: center; gap: 44px; padding: 18px 0 34px; }
+.lens-night-summary dl { margin: 0; min-width: 0; }
+.lens-night-summary .nocturne-stage-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 19px; }
 .lens-night-summary dt, .lens-measurements dt { color: var(--muted); font-size: .78rem; }
-.lens-night-summary dd { margin: 8px 0; font-size: clamp(1.4rem, 2.3vw, 2.25rem); letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
-.lens-night-summary dl > div:first-child dd { color: var(--accent); }
-.lens-night-summary small, .lens-measurements small { display: block; color: var(--faint); font-size: .7rem; line-height: 1.5; }
-.lens-night-assessment .sleep-assessment-title { margin: 0 0 8px; font-size: 1.05rem; line-height: 1.5; }
+.lens-night-summary dd { margin: 6px 0; font-family: var(--font-display); font-weight: 500; font-size: 1.35rem; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+.lens-night-summary .nocturne-duration dt { font-size: .68rem; text-transform: uppercase; letter-spacing: .11em; }
+.lens-night-summary .nocturne-duration dd { margin: 8px 0 11px; font-size: clamp(3.4rem, 6.5vw, 5.1rem); letter-spacing: -.065em; line-height: 1.1; }
+.lens-night-summary .nocturne-duration small { font-size: .8rem; color: var(--muted); }
+.lens-night-summary small, .lens-measurements small { display: block; color: var(--faint); font-size: .72rem; line-height: 1.6; }
+.lens-night-assessment { border-left: 1px solid var(--border); padding-left: 30px; min-width: 0; }
+.lens-night-assessment .sleep-assessment-title { color: var(--accent-hover); margin: 0 0 8px; font-family: var(--font-display); font-weight: 500; font-size: 1.13rem; line-height: 1.5; }
 .lens-night-assessment .sleep-findings { gap: 4px 12px; }
 .lens-night-assessment .sleep-findings a { padding: 4px 0; min-height: 32px !important; }
 .lens-night-assessment .sleep-data-note { margin-bottom: 0; }
-.sleep-timeline { padding: 24px 28px 10px; }
-.sleep-timeline h2 { font-size: 1.2rem; }
+.sleep-timeline { padding: 26px 28px 16px; border-radius: 18px; }
+.sleep-timeline h2 { font-size: 1.08rem; }
+.sleep-legend { gap: 18px; font-size: .72rem; }
+.sleep-legend i { width: 6px; height: 6px; border-radius: 2px; }
+.sleep-track-plot { background: transparent; }
+.sleep-track-plot > svg { border: 0; }
+.sleep-time-axis { font-size: .72rem; }
+.sleep-track-labels { font-size: .72rem; }
+.sleep-timeline > .sleep-meta { font-size: .72rem; color: var(--faint); }
 .sleep-cursor-readout { background: transparent; border-width: 1px 0 0; border-radius: 0; padding: 16px 0 0; }
 .sleep-cursor-readout strong { font-size: .9rem; }
-.lens-measurements { padding: 26px 0; }
+.nocturne-night-lower { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); align-items: start; gap: 30px; margin: 30px 0 24px; }
+.lens-measurements { min-width: 0; padding: 0; }
 .lens-measurements h2 { margin: 0; font-size: 1rem; }
-.lens-measurements .sleep-section-heading { align-items: baseline; margin-bottom: 20px; }
-.lens-measurements dl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 20px; margin: 0; }
-.lens-measurements dd { margin: 8px 0; font-size: 1.4rem; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
-.lens-checkin { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0 24px; scroll-margin-top: 110px; }
+.lens-measurements .sleep-section-heading { display: block; margin-bottom: 21px; }
+.lens-measurements .sleep-section-heading p { margin: 7px 0 0; font-size: .76rem; }
+.lens-measurements dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 25px 20px; margin: 0; }
+.lens-measurements dd { margin: 7px 0; font-family: var(--font-display); font-weight: 500; font-size: 1.65rem; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+.lens-checkin { min-width: 0; background: transparent; border: 0; border-left: 1px solid var(--border); border-radius: 0; padding: 0 0 0 26px; scroll-margin-top: 110px; }
+#sleepWorkspace .lens-checkin[open] { grid-column: 1 / -1; padding: 0 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 #sleepWorkspace .lens-checkin > summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 19px 0; }
 .lens-checkin summary strong { display: block; font-size: .9rem; font-weight: 550; }
 .lens-checkin summary small { display: block; margin-top: 6px; color: var(--muted); font-size: .76rem; }
@@ -101,12 +120,12 @@
 .lens-journal-notes-title { margin: 0 0 16px; font-size: 1rem; }
 .lens-journal-checkin p { color: var(--muted); font-size: .8rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 7px; }
 .login-shell { width: min(980px, 100%); grid-template-columns: minmax(0, 1fr) 360px; gap: clamp(54px, 10vw, 120px); }
-.login-intro h1 { max-width: 9ch; font-size: clamp(3.5rem, 7vw, 5.4rem); font-weight: 550; line-height: .95; letter-spacing: -.065em; margin: 27px 0 24px; }
+.login-intro h1 { max-width: 9ch; font-family: var(--font-display); font-size: clamp(3.5rem, 7vw, 5.4rem); font-weight: 500; line-height: 1.02; letter-spacing: -.065em; margin: 27px 0 24px; }
 .login-intro > p:not(.eyebrow) { max-width: 43ch; color: var(--muted); font-size: 1.02rem; line-height: 1.75; }
 .login-demo-link { width: max-content; display: inline-flex; align-items: center; gap: 9px; margin-top: 30px; color: var(--accent); font-size: .82rem; font-weight: 700; text-decoration: none; }
 .login-demo-link span { transition: transform .16s ease; }
 .login-demo-link:hover span { transform: translate(2px, -2px); }
-.login-card { padding: 32px; }
+.login-card { padding: 32px; border-color: transparent; border-radius: 20px; background: var(--surface); }
 .login-card h2 { font-size: 1.25rem; letter-spacing: -.025em; }
 .login-form label { font-size: .8rem; }
 .login-form input { margin-bottom: 16px; }
@@ -115,9 +134,9 @@
   .header-actions { gap: 5px; }
   .header-actions .sync-status { display: none; }
   .sleep-heading { align-items: start; flex-direction: column; }
-  .lens-night-summary { grid-template-columns: 1fr; gap: 18px; }
-  .lens-night-assessment { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 20px; }
-  .lens-night-assessment .sleep-data-note { flex-basis: 100%; }
+  .lens-night-summary { gap: 28px; }
+  .nocturne-night-lower { grid-template-columns: 1fr; gap: 24px; }
+  .lens-checkin { border-left: 0; border-top: 1px solid var(--border); padding: 0; }
 }
 @media (max-width: 800px) {
   .header-inner, .app-main { width: calc(100% - 40px); }
@@ -125,6 +144,8 @@
   .header-actions { flex: 1; }
   .main-nav { order: 3; flex-basis: 100%; min-height: 48px; }
   .lens-measurements dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lens-night-summary { grid-template-columns: 1fr; gap: 26px; }
+  .lens-night-assessment { border-left: 0; padding-left: 0; }
   .lens-measurements .sleep-section-heading { display: block; }
   .lens-measurements .sleep-section-heading p { margin-top: 8px; }
   .lens-comparison-row { grid-template-columns: minmax(120px, 1fr) minmax(0, 1.5fr) 90px; gap: 12px; }
@@ -147,9 +168,11 @@
   .sleep-date-controls label { grid-column: 1 / -1; grid-row: 1; }
   .sleep-date-controls [data-sleep-latest] { grid-column: 1 / -1; }
   .sleep-session-row { gap: 10px; }
-  .lens-night-summary { padding-top: 20px; }
-  .lens-night-summary dl { grid-template-columns: 1fr 1fr; gap: 24px; }
-  .lens-night-summary dd { font-size: 1.9rem; }
+  .lens-night-summary { padding-top: 12px; padding-bottom: 26px; }
+  .lens-night-summary .nocturne-stage-metrics { gap: 18px; }
+  .lens-night-summary .nocturne-stage-metrics dt { min-height: 2.8em; font-size: .73rem; }
+  .lens-night-summary dd { font-size: 1.25rem; }
+  .lens-night-summary .nocturne-duration dd { font-size: clamp(3.3rem, 13vw, 4.5rem); }
   .sleep-timeline { padding: 18px 12px 8px; }
   .sleep-timeline .view-kicker { font-size: .65rem; }
   .sleep-timeline h2 { font-size: 1.05rem; }

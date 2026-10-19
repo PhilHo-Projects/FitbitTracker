@@ -1,0 +1,77 @@
+/* Public demo layout. Palette and fonts are shared with the private app. */
+h1, h2, h3, .brand { font-family: var(--font-display); }
+h1 { font-weight: 500; font-size: clamp(26px, 2.5vw, 33px); letter-spacing: -.045em; }
+h2 { font-weight: 550; }
+.prototype-bar { background: var(--surface-soft); border-color: var(--line); }
+.prototype-inner { min-height: 36px; padding-block: 7px; }
+.prototype-label { color: var(--muted); font-size: 11px; }
+.header-inner { min-height: 82px; gap: 36px; }
+.brand { font-size: 18px; letter-spacing: -.04em; }
+.brand svg { width: 25px; height: 25px; }
+.main-nav { margin-inline: auto; gap: 32px; }
+.main-nav button { font-size: 13px; }
+.main-nav button[aria-current=page] { color: var(--text); }
+.main-nav button[aria-current=page]:after { height: 3px; width: 18px; left: calc(50% - 9px); border-radius: 3px; }
+main { padding-top: 34px; }
+.page-heading { margin-bottom: 18px; }
+.night-summary { grid-template-columns: minmax(240px, 1fr) minmax(0, 1.3fr); gap: 44px; border: 0; padding: 18px 0 34px; margin-bottom: 0; }
+.night-summary .stat { border: 0; padding: 0; }
+.night-duration dt { font-size: 11px; text-transform: uppercase; letter-spacing: .11em; }
+.night-duration dd { font: 500 clamp(54px, 6.5vw, 82px)/1.1 var(--font-display); letter-spacing: -.065em; margin: 8px 0 11px; }
+.night-duration small { font-size: 13px; }
+.night-assessment { border-left: 1px solid var(--line); padding-left: 30px; min-width: 0; }
+.summary-title { font: 500 18px/1.5 var(--font-display); color: var(--accent-hover); }
+.summary-intro { padding: 0; }
+.summary-intro p { font-size: 12px; }
+.night-stage-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 19px; }
+.night-stage-metrics .stat dd { font: 500 22px/1.4 var(--font-display); letter-spacing: -.045em; margin: 6px 0; }
+.timeline-panel { padding-top: 26px; border-color: transparent; border-radius: 18px; }
+.timeline-heading h2 { font-size: 17px; }
+.plot .stage-join { stroke: var(--border-strong); }
+.timeline-heading .badge { border: 0; background: var(--surface-raised); }
+.nocturne-night-lower { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); align-items: start; gap: 30px; margin: 30px 0 24px; }
+.nocturne-night-lower > section { min-width: 0; }
+.support-heading { display: block; margin: 0 0 21px; }
+.support-heading h2 { font-size: 16px; }
+.support-heading p { margin-top: 7px; font-size: 12px; }
+.measurement-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 25px 20px; }
+.measurement-row > div { border: 0; padding: 0; }
+.measurement-row dd { font-family: var(--font-display); font-weight: 500; font-size: 26px; letter-spacing: -.045em; }
+.checkin-strip { background: transparent; border: 0; border-left: 1px solid var(--line); border-radius: 0; padding: 14px 0 14px 26px; margin-top: 0; align-items: start; }
+.badge.green { background: var(--accent-bg); border-color: var(--border); }
+.badge.amber { background: var(--surface-raised); color: var(--awake); border-color: var(--border); }
+.button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.text-button:hover:not(:disabled) { color: var(--accent-hover); }
+.track-toggles button[aria-pressed=true] { background: var(--accent-bg); }
+.segmented button[aria-pressed=true], .recent-night[aria-pressed=true], .metric-tabs button[aria-pressed=true] { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.pattern-card[aria-pressed=true] { background: var(--accent-bg); border-color: var(--accent); }
+.comparison-bars .bar { background: var(--surface-raised); }
+.comparison-bars .bar.selected { background: var(--accent); }
+.app-footer { max-width: var(--content); color: var(--faint); }
+@media (max-width: 1100px) {
+  .night-summary { grid-template-columns: minmax(230px, 1fr) minmax(0, 1.3fr); gap: 28px; }
+  .nocturne-night-lower { grid-template-columns: 1fr; gap: 24px; }
+  .checkin-strip { border-left: 0; border-top: 1px solid var(--line); padding: 20px 0 0; }
+}
+@media (max-width: 800px) {
+  .night-summary { grid-template-columns: 1fr; gap: 26px; }
+  .night-assessment { border-left: 0; padding-left: 0; }
+  .night-stage-metrics { gap: 18px; }
+  .main-nav { margin-inline: 0; }
+}
+@media (max-width: 600px) {
+  .header-inner { min-height: 72px; gap: 20px; }
+  .brand { font-size: 17px; }
+  .brand svg { width: 23px; height: 23px; }
+  .main-nav { gap: 24px; }
+  main { padding-top: 24px; }
+  .night-summary { padding-top: 8px; padding-bottom: 26px; }
+  .night-duration dd { font-size: clamp(53px, 13vw, 72px); }
+  .night-stage-metrics .stat { padding: 0; }
+  .night-stage-metrics dt { min-height: 2.8em; font-size: 12px; }
+  .night-stage-metrics .stat dd { font-size: 20px; }
+  .timeline-panel { padding-top: 20px; }
+  .measurement-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 18px; }
+  .measurement-row dd { font-size: 23px; }
+  .checkin-strip .badge { flex-shrink: 0; }
+}

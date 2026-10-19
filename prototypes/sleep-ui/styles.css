@@ -1,10 +1,5 @@
 :root {
-  --page:#0b0f14; --surface:#11171e; --raised:#171f28; --hover:#1e2833;
-  --line:#28333e; --line-soft:#202a34; --text:#edf0ed; --muted:#a4b0bd;
-  --accent:#bedb98; --accent-ink:#172410; --accent-bg:#202d22;
-  --awake:#eba96c; --rem:#c78add; --light:#81a9ed; --deep:#8e7be0;
-  --radius:12px; --content:1680px;
-  font-family:Inter,"Segoe UI",system-ui,-apple-system,sans-serif; color-scheme:dark;
+  font-family:var(--font-body); color-scheme:dark;
 }
 *{box-sizing:border-box} body{margin:0;background:var(--page);color:var(--text);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit} button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}
