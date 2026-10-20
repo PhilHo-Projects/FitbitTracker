@@ -1,5 +1,5 @@
 # --- Build stage: install everything and compile Tailwind ---
-FROM node:24-bookworm-slim AS build
+FROM node:24.22.0-bookworm-slim AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY . .
 RUN npm run build
 
 # --- Runtime stage: prod deps + built artifacts only ---
-FROM node:24-bookworm-slim
+FROM node:24.22.0-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000

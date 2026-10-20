@@ -25,17 +25,17 @@
     "test": "node --test"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1092.0",
+    "@aws-sdk/client-s3": "^3.1153.0",
     "archiver": "^7.0.1",
-    "better-auth": "^1.7.1",
+    "better-auth": "1.7.1",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
-    "pg": "^8.16.3",
-    "sharp": "^0.34.3"
+    "pg": "^8.23.1",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "adm-zip": "^0.5.16",
-    "pg-mem": "^3.0.5",
+    "pg-mem": "^3.0.14",
     "tailwindcss": "^3.4.4"
   }
 }
